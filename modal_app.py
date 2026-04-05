@@ -67,20 +67,5 @@ def web():
         return _orig(self, *a, **clean)
     _pu.ProcessorMixin.__init__ = _lenient
 
-    # Patch cache_position in model code (may not persist from build)
-    import glob
-    model_files = glob.glob("/root/.cache/huggingface/modules/transformers_modules/allenai/MolmoWeb*/*/modeling_molmo2.py")
-    for mf in model_files:
-        with open(mf, "r") as f:
-            code = f.read()
-        if "cache_position[0] == 0:" in code and "is_prefill" not in code:
-            code = code.replace(
-                "if cache_position[0] == 0:",
-                "is_prefill = (cache_position is not None and cache_position[0] == 0) or (cache_position is None and past_key_values is None)\n        if is_prefill:"
-            )
-            with open(mf, "w") as f:
-                f.write(code)
-            print(f"[runtime] Patched {mf}")
-
     from main import app as fastapi_app
     return fastapi_app

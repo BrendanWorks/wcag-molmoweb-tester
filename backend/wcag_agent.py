@@ -85,7 +85,50 @@ class WCAGAgent:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
-        print("WCAG agent ready")
+
+        # Monkey-patch prepare_inputs_for_generation to handle cache_position=None
+        # (transformers 5.x removed cache_position but the model code still expects it)
+        _orig_prepare = self.model.prepare_inputs_for_generation
+
+        def _patched_prepare(input_ids, past_key_values=None, cache_position=None, **kwargs):
+            # Determine if this is the prefill (first) step
+            is_prefill = (
+                (cache_position is not None and cache_position[0] == 0)
+                or (cache_position is None and past_key_values is None)
+            )
+
+            # Extract image kwargs before calling parent
+            pixel_values = kwargs.pop("pixel_values", None)
+            image_token_pooling = kwargs.pop("image_token_pooling", None)
+            image_grids = kwargs.pop("image_grids", None)
+            image_num_crops = kwargs.pop("image_num_crops", None)
+            pixel_values_videos = kwargs.pop("pixel_values_videos", None)
+            video_token_pooling = kwargs.pop("video_token_pooling", None)
+            video_grids = kwargs.pop("video_grids", None)
+
+            # Call grandparent's prepare_inputs (skip the broken override)
+            from transformers import GenerationMixin
+            model_inputs = GenerationMixin.prepare_inputs_for_generation(
+                self.model, input_ids,
+                past_key_values=past_key_values,
+                cache_position=cache_position,
+                **kwargs,
+            )
+
+            # Only pass image data on the first (prefill) step
+            if is_prefill:
+                model_inputs["pixel_values"] = pixel_values
+                model_inputs["image_token_pooling"] = image_token_pooling
+                model_inputs["image_grids"] = image_grids
+                model_inputs["image_num_crops"] = image_num_crops
+                model_inputs["pixel_values_videos"] = pixel_values_videos
+                model_inputs["video_token_pooling"] = video_token_pooling
+                model_inputs["video_grids"] = video_grids
+
+            return model_inputs
+
+        self.model.prepare_inputs_for_generation = _patched_prepare
+        print("WCAG agent ready (with cache_position patch)")
 
     async def analyze_screenshot(
         self, screenshot: Image.Image, prompt: str

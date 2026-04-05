@@ -1,0 +1,13 @@
+from tests.keyboard_nav import KeyboardNavTest
+from tests.zoom_test import ZoomTest
+from tests.color_blindness import ColorBlindnessTest
+from tests.focus_indicator import FocusIndicatorTest
+from tests.form_errors import FormErrorTest
+
+__all__ = [
+    "KeyboardNavTest",
+    "ZoomTest",
+    "ColorBlindnessTest",
+    "FocusIndicatorTest",
+    "FormErrorTest",
+]

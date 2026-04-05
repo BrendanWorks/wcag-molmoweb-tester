@@ -1,0 +1,16 @@
+# MolmoWeb model + inference
+torch>=2.9.0
+torchvision
+transformers>=4.47.1
+Pillow>=11.0.0
+bitsandbytes>=0.44.0
+numpy>=1.24.3
+accelerate>=1.2.0
+playwright>=1.48.0
+
+# Backend API
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.6
+websockets>=13.1
+pydantic>=2.10.0
+python-multipart>=0.0.12

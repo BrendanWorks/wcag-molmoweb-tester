@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WCAG 2.1 Accessibility Tester</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; display: flex; flex-direction: column; }
+  header { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 12px 24px; display: flex; align-items: center; gap: 12px; }
+  .logo { width: 32px; height: 32px; border-radius: 8px; background: #2563eb; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 11px; }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header p { font-size: 12px; color: #64748b; }
+  main { flex: 1; max-width: 900px; width: 100%; margin: 0 auto; padding: 40px 24px; }
+
+  /* Form */
+  .form-section { margin-bottom: 24px; }
+  .form-section label { display: block; font-size: 14px; font-weight: 500; color: #334155; margin-bottom: 6px; }
+  .form-section .hint { font-size: 12px; color: #94a3b8; font-weight: 400; }
+  input[type="text"] { width: 100%; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  input[type="text"]:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+
+  /* Test selector */
+  .phase-group { margin-bottom: 16px; }
+  .phase-label { font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .test-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s, background .15s; }
+  .test-option:hover { border-color: #cbd5e1; }
+  .test-option.checked { border-color: #93c5fd; background: #eff6ff; }
+  .test-option input[type="checkbox"] { margin-top: 2px; }
+  .test-option .name { font-size: 14px; font-weight: 500; color: #1e293b; }
+  .test-option .desc { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .test-option .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .test-option .tag { font-size: 11px; font-family: monospace; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 4px; }
+  .selected-count { font-size: 13px; color: #94a3b8; font-weight: 400; }
+
+  /* Quantization checkbox */
+  .quant-row { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+  .quant-row label { font-size: 14px; color: #475569; }
+  .quant-row .dim { color: #94a3b8; }
+
+  /* Submit button */
+  .submit-btn { background: #2563eb; color: #fff; font-size: 14px; font-weight: 500; padding: 10px 24px; border: none; border-radius: 8px; cursor: pointer; transition: background .15s; }
+  .submit-btn:hover { background: #1d4ed8; }
+  .submit-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+
+  /* Error */
+  .error-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px; color: #b91c1c; font-size: 14px; margin-bottom: 16px; }
+
+  /* Progress */
+  #progress-section { display: none; }
+  .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .progress-header h2 { font-size: 20px; font-weight: 700; }
+  .cancel-btn { font-size: 13px; color: #dc2626; background: none; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+  .cancel-btn:hover { background: #fef2f2; }
+  .progress-bar-wrap { background: #e2e8f0; border-radius: 6px; height: 8px; margin-bottom: 16px; overflow: hidden; }
+  .progress-bar-fill { background: #2563eb; height: 100%; width: 0; transition: width .3s; border-radius: 6px; }
+  .test-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .pill { font-size: 12px; padding: 4px 10px; border-radius: 12px; background: #f1f5f9; color: #64748b; }
+  .pill.active { background: #dbeafe; color: #1d4ed8; font-weight: 600; }
+  .pill.done { background: #dcfce7; color: #166534; }
+  .pill.error { background: #fef2f2; color: #b91c1c; }
+  .log { background: #1e293b; color: #cbd5e1; border-radius: 8px; padding: 16px; font-family: 'SF Mono', Monaco, Menlo, monospace; font-size: 12px; max-height: 400px; overflow-y: auto; line-height: 1.6; }
+  .log .ts { color: #64748b; }
+  .log .msg-status { color: #38bdf8; }
+  .log .msg-progress { color: #a78bfa; }
+  .log .msg-result { color: #4ade80; }
+  .log .msg-error { color: #f87171; }
+
+  /* Results */
+  #results-section { display: none; }
+  .results-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+  .results-header h2 { font-size: 20px; font-weight: 700; }
+  .compliance-badge { font-size: 28px; font-weight: 700; padding: 8px 20px; border-radius: 12px; }
+  .compliance-badge.good { background: #dcfce7; color: #166534; }
+  .compliance-badge.mid { background: #fef9c3; color: #854d0e; }
+  .compliance-badge.bad { background: #fef2f2; color: #b91c1c; }
+  .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .summary-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: center; }
+  .summary-card .num { font-size: 28px; font-weight: 700; }
+  .summary-card .lbl { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .result-item { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+  .result-item-header { padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .result-item-header:hover { background: #f8fafc; }
+  .result-item .severity { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; }
+  .severity.critical { background: #fef2f2; color: #b91c1c; }
+  .severity.major { background: #fff7ed; color: #c2410c; }
+  .severity.minor { background: #fef9c3; color: #854d0e; }
+  .severity.pass { background: #dcfce7; color: #166534; }
+  .result-item-body { display: none; padding: 0 16px 14px; font-size: 13px; color: #475569; line-height: 1.6; border-top: 1px solid #f1f5f9; }
+  .result-item-body.open { display: block; }
+  .result-item-body dt { font-weight: 600; margin-top: 10px; }
+  .result-item-body dd { margin-left: 0; margin-top: 2px; }
+  .result-item-body img { max-width: 100%; border-radius: 6px; margin-top: 8px; border: 1px solid #e2e8f0; }
+  .action-row { display: flex; gap: 8px; margin-top: 16px; }
+  .action-btn { font-size: 13px; padding: 8px 16px; border-radius: 6px; cursor: pointer; border: 1px solid #e2e8f0; background: #fff; color: #334155; }
+  .action-btn:hover { background: #f8fafc; }
+  .action-btn.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .action-btn.primary:hover { background: #1d4ed8; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">A11Y</div>
+  <div>
+    <h1>WCAG 2.1 Tester</h1>
+    <p>Level AA Compliance — Powered by MolmoWeb</p>
+  </div>
+</header>
+
+<main>
+  <!-- ── Form ────────────────────────────────────────────────── -->
+  <div id="form-section">
+    <h2 style="font-size:24px;font-weight:700;margin-bottom:4px;">Run Accessibility Audit</h2>
+    <p style="font-size:14px;color:#64748b;margin-bottom:28px;">Enter a URL and choose which WCAG 2.1 Level AA tests to run. MolmoWeb navigates the site under simulated accessibility constraints.</p>
+
+    <div id="error-box" class="error-box" style="display:none;"></div>
+
+    <form id="audit-form">
+      <div class="form-section">
+        <label for="url-input">Website URL <span style="color:#ef4444;">*</span></label>
+        <input type="text" id="url-input" placeholder="https://example.com">
+      </div>
+
+      <div class="form-section">
+        <label for="task-input">Task Description <span class="hint">— what a real user would try to accomplish</span></label>
+        <input type="text" id="task-input" value="Navigate and use the main features of this website">
+      </div>
+
+      <div class="form-section">
+        <label>Select Tests <span class="selected-count" id="selected-count">(3 selected)</span></label>
+        <div id="test-list"></div>
+      </div>
+
+      <div class="quant-row">
+        <input type="checkbox" id="quant-check">
+        <label for="quant-check">Use 4-bit quantization <span class="dim">(less VRAM, slower inference)</span></label>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submit-btn">Run 3 Tests</button>
+    </form>
+  </div>
+
+  <!-- ── Progress ────────────────────────────────────────────── -->
+  <div id="progress-section">
+    <div class="progress-header">
+      <h2>Running Audit…</h2>
+      <button class="cancel-btn" id="cancel-btn">Cancel</button>
+    </div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-bar"></div></div>
+    <div class="test-pills" id="test-pills"></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- ── Results ─────────────────────────────────────────────── -->
+  <div id="results-section">
+    <div class="results-header">
+      <div>
+        <h2>Audit Results</h2>
+        <p id="results-url" style="font-size:13px;color:#64748b;margin-top:4px;"></p>
+      </div>
+      <div class="compliance-badge" id="compliance-badge">—</div>
+    </div>
+    <div class="summary-cards" id="summary-cards"></div>
+    <div id="results-list"></div>
+    <div class="action-row">
+      <button class="action-btn primary" id="new-audit-btn">Run Another Audit</button>
+      <button class="action-btn" id="download-json-btn">Download JSON</button>
+      <button class="action-btn" id="download-csv-btn">Download CSV</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = location.origin;
+const WS_BASE = API.replace(/^http/, 'ws');
+
+const TESTS = [
+  { id: 'keyboard_nav', label: 'Keyboard-Only Navigation', desc: 'Tabs through interactive elements; checks every control is reachable and no keyboard traps exist.', wcag: ['2.1.1','2.1.2','2.4.3'], phase: 1 },
+  { id: 'zoom', label: '200% Zoom / Reflow', desc: 'Applies 2x browser zoom and checks that text, controls, and layout remain usable without horizontal scroll.', wcag: ['1.4.4','1.4.10'], phase: 1 },
+  { id: 'color_blindness', label: 'Color-Blindness Simulation', desc: 'Injects a Deuteranopia filter and checks whether any element can only be distinguished by color.', wcag: ['1.4.1','1.4.3'], phase: 1 },
+  { id: 'focus_indicator', label: 'Focus Visibility Check', desc: 'Tabs through every element and verifies each has a clearly visible focus ring.', wcag: ['2.4.7'], phase: 2 },
+  { id: 'form_errors', label: 'Form Error Handling', desc: 'Submits forms with invalid data and checks that errors are descriptive, associated with fields, and provide correction hints.', wcag: ['3.3.1','3.3.2','3.3.3'], phase: 2 },
+];
+
+let selected = new Set(TESTS.filter(t => t.phase === 1).map(t => t.id));
+let ws = null;
+let currentReport = null;
+let currentUrl = '';
+
+// ── Build test checkboxes ──────────────────────────────────────
+const testListEl = document.getElementById('test-list');
+const phases = [...new Set(TESTS.map(t => t.phase))].sort();
+const phaseLabels = { 1: 'Phase 1 — MVP', 2: 'Phase 2' };
+
+phases.forEach(phase => {
+  const group = document.createElement('div');
+  group.className = 'phase-group';
+  group.innerHTML = `<div class="phase-label">${phaseLabels[phase]}</div>`;
+
+  TESTS.filter(t => t.phase === phase).forEach(test => {
+    const div = document.createElement('div');
+    div.className = 'test-option' + (selected.has(test.id) ? ' checked' : '');
+    div.innerHTML = `
+      <input type="checkbox" ${selected.has(test.id) ? 'checked' : ''} data-id="${test.id}">
+      <div>
+        <div class="name">${test.label}</div>
+        <div class="desc">${test.desc}</div>
+        <div class="tags">${test.wcag.map(c => `<span class="tag">${c}</span>`).join('')}</div>
+      </div>`;
+    div.addEventListener('click', e => {
+      if (e.target.tagName === 'INPUT') return;
+      const cb = div.querySelector('input');
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change'));
+    });
+    div.querySelector('input').addEventListener('change', e => {
+      if (e.target.checked) selected.add(test.id); else selected.delete(test.id);
+      div.classList.toggle('checked', e.target.checked);
+      updateCount();
+    });
+    group.appendChild(div);
+  });
+  testListEl.appendChild(group);
+});
+
+function updateCount() {
+  document.getElementById('selected-count').textContent = `(${selected.size} selected)`;
+  document.getElementById('submit-btn').textContent = `Run ${selected.size} Test${selected.size !== 1 ? 's' : ''}`;
+}
+
+// ── Form submit ────────────────────────────────────────────────
+document.getElementById('audit-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  console.log('[WCAG] Form submitted');
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) return showError('Please enter a URL.');
+  if (selected.size === 0) return showError('Please select at least one test.');
+
+  hideError();
+  currentUrl = url;
+
+  // Disable button to prevent double-submit
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  try {
+    console.log('[WCAG] Posting to', `${API}/api/run`);
+    const res = await fetch(`${API}/api/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        tests: [...selected],
+        task: document.getElementById('task-input').value.trim() || 'Navigate and use the main features of this website',
+        use_quantization: document.getElementById('quant-check').checked,
+      }),
+    });
+    console.log('[WCAG] Response status:', res.status);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.detail || `Server error ${res.status}`);
+    }
+    const data = await res.json();
+    console.log('[WCAG] Got run_id:', data.run_id);
+    showProgress(data.run_id);
+  } catch (err) {
+    console.error('[WCAG] Submit error:', err);
+    showError(err.message || 'Failed to connect to backend');
+    btn.disabled = false;
+    updateCount();
+  }
+});
+
+// ── Progress / WebSocket ───────────────────────────────────────
+function showProgress(runId) {
+  show('progress-section');
+  hide('form-section');
+  hide('results-section');
+
+  const logEl = document.getElementById('log');
+  logEl.innerHTML = '';
+  const barEl = document.getElementById('progress-bar');
+  barEl.style.width = '0%';
+
+  // Build pills
+  const pillsEl = document.getElementById('test-pills');
+  pillsEl.innerHTML = '';
+  const tests = [...selected];
+  tests.forEach(id => {
+    const t = TESTS.find(x => x.id === id);
+    const pill = document.createElement('span');
+    pill.className = 'pill';
+    pill.id = `pill-${id}`;
+    pill.textContent = t ? t.label : id;
+    pillsEl.appendChild(pill);
+  });
+
+  ws = new WebSocket(`${WS_BASE}/ws/${runId}`);
+
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data);
+    const ts = new Date().toLocaleTimeString();
+
+    if (msg.type === 'status') {
+      appendLog(ts, msg.message, 'msg-status');
+    } else if (msg.type === 'progress') {
+      appendLog(ts, msg.message, 'msg-progress');
+    } else if (msg.type === 'test_start') {
+      const pct = ((msg.index) / msg.total * 100).toFixed(0);
+      barEl.style.width = pct + '%';
+      const pill = document.getElementById(`pill-${msg.test}`);
+      if (pill) pill.className = 'pill active';
+      appendLog(ts, `Starting: ${msg.test_name}`, 'msg-status');
+    } else if (msg.type === 'test_complete') {
+      const pill = document.getElementById(`pill-${msg.test}`);
+      if (pill) pill.className = 'pill done';
+    } else if (msg.type === 'result') {
+      const d = msg.data;
+      const icon = d.result === 'pass' ? '✓' : d.result === 'fail' ? '✗' : '—';
+      appendLog(ts, `${icon} [${d.wcag_criteria}] ${d.result.toUpperCase()} — ${d.failure_reason || 'Passed'}`, 'msg-result');
+    } else if (msg.type === 'done') {
+      barEl.style.width = '100%';
+      appendLog(ts, 'All tests complete.', 'msg-status');
+      currentReport = msg.report;
+      setTimeout(() => showResults(msg.report), 600);
+    } else if (msg.type === 'error') {
+      appendLog(ts, `ERROR: ${msg.message}`, 'msg-error');
+      const pill = document.querySelector('.pill.active');
+      if (pill) pill.className = 'pill error';
+    }
+  };
+
+  ws.onerror = () => {
+    appendLog(new Date().toLocaleTimeString(), 'WebSocket connection failed. Is the backend running?', 'msg-error');
+  };
+
+  document.getElementById('cancel-btn').onclick = () => {
+    if (ws) ws.close();
+    resetToForm();
+  };
+}
+
+function appendLog(ts, text, cls) {
+  const logEl = document.getElementById('log');
+  const line = document.createElement('div');
+  line.innerHTML = `<span class="ts">[${ts}]</span> <span class="${cls}">${escapeHtml(text)}</span>`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ── Results ────────────────────────────────────────────────────
+function showResults(report) {
+  hide('form-section');
+  hide('progress-section');
+  show('results-section');
+
+  document.getElementById('results-url').textContent = currentUrl;
+
+  const pct = report.compliance_percentage ?? 0;
+  const badge = document.getElementById('compliance-badge');
+  badge.textContent = pct + '%';
+  badge.className = 'compliance-badge ' + (pct >= 80 ? 'good' : pct >= 50 ? 'mid' : 'bad');
+
+  const cards = document.getElementById('summary-cards');
+  const s = report.summary || {};
+  cards.innerHTML = [
+    { n: s.total_tests ?? 0, l: 'Total Checks' },
+    { n: s.passed ?? 0, l: 'Passed' },
+    { n: s.failed ?? 0, l: 'Failed' },
+    { n: s.errors ?? 0, l: 'Errors' },
+    { n: s.warnings ?? 0, l: 'Warnings' },
+  ].map(c => `<div class="summary-card"><div class="num">${c.n}</div><div class="lbl">${c.l}</div></div>`).join('');
+
+  // Top failing WCAG criteria
+  const criteriaEl = document.getElementById('results-list');
+  criteriaEl.innerHTML = '';
+
+  const topCriteria = report.top_criteria_failures || [];
+  if (topCriteria.length > 0) {
+    const critSection = document.createElement('div');
+    critSection.style.cssText = 'margin-bottom:24px;';
+    critSection.innerHTML = '<h3 style="font-size:15px;font-weight:600;margin-bottom:12px;color:#334155;">Top Failing WCAG Criteria</h3>';
+    const critList = document.createElement('div');
+    critList.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;';
+    topCriteria.forEach(c => {
+      critList.innerHTML += `<span style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:6px 12px;border-radius:6px;font-size:13px;font-weight:500;">
+        ${escapeHtml(c.criterion)} ${escapeHtml(c.label)} <span style="font-weight:700;">(${c.failure_count})</span>
+      </span>`;
+    });
+    critSection.appendChild(critList);
+    criteriaEl.appendChild(critSection);
+  }
+
+  // Per-test results — each test_summary IS a result (flat object, not nested)
+  const heading = document.createElement('h3');
+  heading.style.cssText = 'font-size:15px;font-weight:600;margin-bottom:12px;color:#334155;';
+  heading.textContent = 'Test Results';
+  criteriaEl.appendChild(heading);
+
+  (report.test_summaries || []).forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'result-item';
+    const sev = r.severity || r.result || 'minor';
+    const sevClass = sev === 'critical' ? 'critical' : sev === 'major' ? 'major' : r.result === 'pass' ? 'pass' : r.result === 'warning' ? 'minor' : r.result === 'error' ? 'critical' : 'minor';
+    const criteria = Array.isArray(r.wcag_criteria) ? r.wcag_criteria.join(', ') : (r.wcag_criteria || '—');
+    const title = r.result === 'pass' ? r.test_name + ' — Passed' : (r.failure_reason || r.test_name);
+    item.innerHTML = `
+      <div class="result-item-header">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:600;color:#1e293b;">${escapeHtml(r.test_name)}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px;">WCAG ${escapeHtml(criteria)}</div>
+        </div>
+        <span class="severity ${sevClass}">${r.result || sev}</span>
+      </div>
+      <div class="result-item-body">
+        <dl>
+          ${r.failure_reason ? `<dt>Issue</dt><dd>${escapeHtml(r.failure_reason)}</dd>` : '<dt>Status</dt><dd>All checks passed.</dd>'}
+          ${r.recommendation ? `<dt>Recommendation</dt><dd>${escapeHtml(r.recommendation)}</dd>` : ''}
+          ${r.screenshot_path ? `<dt>Screenshot</dt><dd><img src="/screenshots/${escapeHtml(r.screenshot_path.split('/screenshots/').pop() || '')}" alt="Screenshot of ${escapeHtml(r.test_name)} test result" loading="lazy"></dd>` : ''}
+        </dl>
+      </div>`;
+    item.querySelector('.result-item-header').addEventListener('click', () => {
+      item.querySelector('.result-item-body').classList.toggle('open');
+    });
+    criteriaEl.appendChild(item);
+  });
+}
+
+// ── Downloads ──────────────────────────────────────────────────
+document.getElementById('download-json-btn').addEventListener('click', () => {
+  if (!currentReport) return;
+  download('wcag-report.json', JSON.stringify(currentReport, null, 2), 'application/json');
+});
+document.getElementById('download-csv-btn').addEventListener('click', () => {
+  if (!currentReport) return;
+  let csv = 'Test,WCAG Criteria,Result,Severity,Issue,Recommendation\n';
+  (currentReport.test_summaries || []).forEach(r => {
+    const criteria = Array.isArray(r.wcag_criteria) ? r.wcag_criteria.join('|') : (r.wcag_criteria || '');
+    csv += [
+      `"${(r.test_name||'').replace(/"/g,'""')}"`,
+      `"${criteria}"`,
+      r.result,
+      r.severity,
+      `"${(r.failure_reason||'').replace(/"/g,'""')}"`,
+      `"${(r.recommendation||'').replace(/"/g,'""')}"`
+    ].join(',') + '\n';
+  });
+  download('wcag-report.csv', csv, 'text/csv');
+});
+
+function download(name, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = name;
+  a.click();
+}
+
+// ── New audit ──────────────────────────────────────────────────
+document.getElementById('new-audit-btn').addEventListener('click', resetToForm);
+
+function resetToForm() {
+  if (ws) ws.close();
+  hide('progress-section');
+  hide('results-section');
+  show('form-section');
+  currentReport = null;
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+function show(id) { document.getElementById(id).style.display = 'block'; }
+function hide(id) { document.getElementById(id).style.display = 'none'; }
+function showError(msg) { const el = document.getElementById('error-box'); el.textContent = msg; el.style.display = 'block'; }
+function hideError() { document.getElementById('error-box').style.display = 'none'; }
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>

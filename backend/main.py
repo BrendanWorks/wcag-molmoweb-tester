@@ -181,7 +181,8 @@ async def websocket_run(ws: WebSocket, run_id: str):
 
             await send({"type": "status", "message": f"Navigating to {run['url']}..."})
             try:
-                await page.goto(run["url"], wait_until="networkidle", timeout=30000)
+                await page.goto(run["url"], wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(2)  # let JS-heavy pages settle
             except Exception as e:
                 await send({"type": "error", "message": f"Failed to load URL: {e}"})
                 run["status"] = "error"
@@ -205,18 +206,15 @@ async def websocket_run(ws: WebSocket, run_id: str):
 
                 # Navigate back to target URL before each test
                 try:
-                    await page.goto(run["url"], wait_until="networkidle", timeout=20000)
-                    await asyncio.sleep(1)
+                    await page.goto(run["url"], wait_until="domcontentloaded", timeout=20000)
+                    await asyncio.sleep(2)
                 except Exception:
                     pass
 
                 async for event in test.run(page, run["task"]):
                     await send(event)
                     if event["type"] == "result":
-                        # Strip screenshot b64 from stored result (keep path only)
-                        stored = dict(event["data"])
-                        stored.pop("screenshot_b64", None)
-                        run["results"].append(stored)
+                        run["results"].append(dict(event["data"]))
 
                 await send({"type": "test_complete", "test": test_id})
 

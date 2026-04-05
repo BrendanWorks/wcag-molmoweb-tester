@@ -27,39 +27,10 @@ image = (
         "python-multipart",
     )
     .run_commands("playwright install chromium && playwright install-deps")
-    # Pre-download the model into the image so cold starts are fast
-    .run_commands(
-        "python -c \""
-        "from transformers import AutoModelForImageTextToText, AutoProcessor, AutoConfig; "
-        "AutoConfig.from_pretrained('allenai/MolmoWeb-4B', trust_remote_code=True); "
-        "AutoProcessor.from_pretrained('allenai/MolmoWeb-4B', trust_remote_code=True); "
-        "print('Processor cached'); "
-        "\"",
-        gpu="any",
-    )
-    .run_commands(
-        "python -c \""
-        "from transformers import AutoModelForImageTextToText; "
-        "import torch; "
-        "AutoModelForImageTextToText.from_pretrained("
-        "'allenai/MolmoWeb-4B', "
-        "dtype=torch.bfloat16, "
-        "device_map='auto', "
-        "trust_remote_code=True"
-        "); "
-        "print('Model cached'); "
-        "\"",
-        gpu="any",
-    )
-)
-
-# Copy our backend code into the image
-backend_mount = modal.Mount.from_local_dir(
-    "backend",
-    remote_path="/app",
-    condition=lambda path: not any(
-        x in path for x in ["venv/", "__pycache__", "screenshots/", ".pyc"]
-    ),
+    # Copy backend code into the image (before model download so setup_model.py is available)
+    .add_local_dir("backend", remote_path="/app", copy=True)
+    # Download + patch model with all compat fixes applied
+    .run_commands("cd /app && python setup_model.py", gpu="any")
 )
 
 
@@ -67,15 +38,14 @@ backend_mount = modal.Mount.from_local_dir(
     image=image,
     gpu="A10G",
     timeout=600,
-    mounts=[backend_mount],
-    allow_concurrent_inputs=5,
 )
+@modal.concurrent(max_inputs=5)
 @modal.asgi_app()
 def web():
     import sys
     sys.path.insert(0, "/app")
 
-    # Apply the same compatibility patches as wcag_agent.py
+    # Apply runtime patches (same as setup_model.py but for the running container)
     from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
     if "default" not in ROPE_INIT_FUNCTIONS:
         import torch as _torch
@@ -96,22 +66,6 @@ def web():
             setattr(self, k, v)
         return _orig(self, *a, **clean)
     _pu.ProcessorMixin.__init__ = _lenient
-
-    # Patch the cached model code for cache_position compatibility
-    import importlib
-    import glob
-    model_files = glob.glob("/root/.cache/huggingface/modules/transformers_modules/allenai/MolmoWeb*/*/modeling_molmo2.py")
-    for mf in model_files:
-        with open(mf, "r") as f:
-            code = f.read()
-        if "cache_position[0] == 0:" in code and "is_prefill" not in code:
-            code = code.replace(
-                "if cache_position[0] == 0:",
-                "is_prefill = (cache_position is not None and cache_position[0] == 0) or (cache_position is None and past_key_values is None)\n        if is_prefill:"
-            )
-            with open(mf, "w") as f:
-                f.write(code)
-            print(f"Patched {mf}")
 
     from main import app as fastapi_app
     return fastapi_app

@@ -29,14 +29,14 @@ _pu.ProcessorMixin.__init__ = _lenient
 # 3) Download config + processor
 from transformers import AutoConfig, AutoProcessor
 print("Downloading config...")
-AutoConfig.from_pretrained("allenai/MolmoWeb-4B", trust_remote_code=True)
+AutoConfig.from_pretrained("allenai/Molmo2-4B", trust_remote_code=True)
 print("Downloading processor...")
-AutoProcessor.from_pretrained("allenai/MolmoWeb-4B", trust_remote_code=True)
+AutoProcessor.from_pretrained("allenai/Molmo2-4B", trust_remote_code=True, padding_side="left")
 print("Processor cached.")
 
 # 4) Patch the modeling code for cache_position compatibility
 import glob
-model_files = glob.glob("/root/.cache/huggingface/modules/transformers_modules/allenai/MolmoWeb*/*/modeling_molmo2.py")
+model_files = glob.glob("/root/.cache/huggingface/modules/transformers_modules/allenai/Molmo2*/*/modeling_molmo2.py")
 for mf in model_files:
     with open(mf, "r") as f:
         code = f.read()
@@ -54,7 +54,7 @@ from transformers import AutoModelForImageTextToText
 import torch
 print("Downloading model weights (this takes a while)...")
 AutoModelForImageTextToText.from_pretrained(
-    "allenai/MolmoWeb-4B",
+    "allenai/Molmo2-4B",
     dtype=torch.bfloat16,
     device_map="auto",
     trust_remote_code=True,

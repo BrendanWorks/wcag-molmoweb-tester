@@ -23,7 +23,7 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 class WCAGAgent:
     def __init__(
         self,
-        model_name: str = "allenai/MolmoWeb-4B",
+        model_name: str = "allenai/Molmo2-4B",
         use_quantization: bool = False,
     ):
         self.model_name = model_name
@@ -136,8 +136,7 @@ class WCAGAgent:
     def _analyze_sync(self, screenshot: Image.Image, prompt: str) -> dict:
         """Synchronous inference — called from a thread."""
         try:
-            # MolmoWeb expects "molmo_web_think: " prefix for web-agent mode
-            prefixed_prompt = f"molmo_web_think: {prompt}"
+            prefixed_prompt = prompt
 
             # Two-step: get formatted text template first (no tokenization),
             # then call processor directly so the image is correctly embedded.

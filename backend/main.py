@@ -165,7 +165,7 @@ async def websocket_run(ws: WebSocket, run_id: str):
     try:
         global _agent
         if _agent is None:
-            await send({"type": "status", "message": "Loading MolmoWeb model (first run downloads ~12 GB — this takes a while)..."})
+            await send({"type": "status", "message": "Loading Molmo2 model (first run takes ~30s to warm up)..."})
             # Run model load in a thread so we don't block the event loop
             _agent = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: WCAGAgent(use_quantization=run["use_quantization"])

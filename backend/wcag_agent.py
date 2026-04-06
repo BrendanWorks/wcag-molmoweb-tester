@@ -185,7 +185,8 @@ class WCAGAgent:
             # Only decode the NEW tokens (skip the echoed prompt)
             new_tokens = outputs[0][input_len:]
             response = self.processor.decode(new_tokens, skip_special_tokens=True).strip()
-            print(f"[MolmoWeb] Generated ({len(new_tokens)} tokens): {response[:300]}...")
+            print(f"[Molmo2] Generated ({len(new_tokens)} tokens):")
+            print(f"[Molmo2] FULL RESPONSE: {response}")
 
             try:
                 json_match = re.search(r"\{.*\}", response, re.DOTALL)

@@ -136,14 +136,18 @@ class WCAGAgent:
     def _analyze_sync(self, screenshot: Image.Image, prompt: str) -> dict:
         """Synchronous inference — called from a thread."""
         try:
-            # Direct processor call — skip apply_chat_template entirely.
-            # For Molmo2 the chat template path doesn't correctly bind images,
-            # resulting in all-special-token output. Direct (text, images) call works.
-            inputs = self.processor(
-                text=prompt,
-                images=[screenshot],
-                return_tensors="pt",
-                padding=True,
+            # One-step: pass image directly in messages so apply_chat_template
+            # inserts image tokens into input_ids. This correctly binds the image.
+            messages = [{"role": "user", "content": [
+                {"type": "image", "image": screenshot},
+                {"type": "text", "text": prompt},
+            ]}]
+            inputs = self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                return_dict=True,
+                add_generation_prompt=True,
+                processor_kwargs={"padding": True, "return_tensors": "pt"},
             )
             inputs.pop("token_type_ids", None)
 
@@ -159,6 +163,9 @@ class WCAGAgent:
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=512,
+                    do_sample=True,
+                    temperature=0.7,
+                    top_p=0.8,
                 )
 
             # Only decode the NEW tokens (skip the echoed prompt)

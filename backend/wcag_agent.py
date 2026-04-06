@@ -136,36 +136,15 @@ class WCAGAgent:
     def _analyze_sync(self, screenshot: Image.Image, prompt: str) -> dict:
         """Synchronous inference — called from a thread."""
         try:
-            prefixed_prompt = prompt
-
-            # Two-step: get formatted text template first (no tokenization),
-            # then call processor directly so the image is correctly embedded.
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": prefixed_prompt},
-                    ],
-                }
-            ]
-
-            text = self.processor.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-
+            # Direct processor call — skip apply_chat_template entirely.
+            # For Molmo2 the chat template path doesn't correctly bind images,
+            # resulting in all-special-token output. Direct (text, images) call works.
             inputs = self.processor(
-                text=text,
+                text=prompt,
                 images=[screenshot],
                 return_tensors="pt",
                 padding=True,
             )
-
-            # CRITICAL: Remove token_type_ids — MolmoWeb uses causal attention only.
-            # HF adds token_type_ids for bidirectional attention on image tokens,
-            # which corrupts generation and causes degenerate repetitive output.
             inputs.pop("token_type_ids", None)
 
             inputs = {

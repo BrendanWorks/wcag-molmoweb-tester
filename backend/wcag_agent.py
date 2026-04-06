@@ -66,8 +66,9 @@ class WCAGAgent:
             padding_side="left",
         )
 
+        self.model_dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
         model_kwargs = {
-            "torch_dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
+            "dtype": self.model_dtype,
             "device_map": "auto" if self.device == "cuda" else None,
             "trust_remote_code": True,
         }
@@ -152,7 +153,11 @@ class WCAGAgent:
             inputs.pop("token_type_ids", None)
 
             inputs = {
-                k: v.to(self.device) if isinstance(v, torch.Tensor) else v
+                k: (v.to(self.device, dtype=self.model_dtype)
+                    if isinstance(v, torch.Tensor) and v.is_floating_point()
+                    else v.to(self.device)
+                    if isinstance(v, torch.Tensor)
+                    else v)
                 for k, v in inputs.items()
             }
 

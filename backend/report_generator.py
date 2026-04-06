@@ -74,6 +74,7 @@ def generate_report(run: dict) -> dict:
             "recommendation": result.get("recommendation", "") if result else "",
             "screenshot_path": result.get("screenshot_path") if result else None,
             "screenshot_b64": result.get("screenshot_b64") if result else None,
+            "details": result.get("details") if result else None,
         })
 
     overall_status = "compliant" if not failed else (

@@ -25,6 +25,7 @@ image = (
         "requests",
         "numpy",
         "accelerate",
+        "bitsandbytes",
         "playwright",
         "fastapi",
         "uvicorn[standard]",

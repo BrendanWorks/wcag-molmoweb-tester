@@ -177,6 +177,8 @@ async def websocket_run(ws: WebSocket, run_id: str):
                     None, lambda: Molmo2Pointer(use_quantization=run["use_quantization"])
                 )
             except Exception as e:
+                import traceback
+                print(f"[Molmo2] LOAD ERROR: {e}\n{traceback.format_exc()}")
                 await send({"type": "status", "message": f"Molmo2 pointer unavailable ({e}) — running CSS-only mode."})
                 _pointer = None
         await send({"type": "status", "message": "Models ready. Launching browser..."})

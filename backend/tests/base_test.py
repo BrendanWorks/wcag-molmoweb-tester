@@ -30,9 +30,10 @@ class BaseWCAGTest:
     WCAG_CRITERIA: list[str] = []
     DEFAULT_SEVERITY: str = "major"
 
-    def __init__(self, agent, run_dir: Path):
+    def __init__(self, agent, run_dir: Path, pointer=None):
         self.agent = agent
         self.run_dir = run_dir
+        self.pointer = pointer  # Optional Molmo2Pointer for visual confirmation
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         """

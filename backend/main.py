@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, HttpUrl
 from playwright.async_api import async_playwright
 
-from wcag_agent import WCAGAgent
+from wcag_agent import WCAGAgent, Molmo2Pointer
 from tests import (
     KeyboardNavTest,
     ZoomTest,
@@ -53,6 +53,7 @@ async def serve_frontend():
 # ── Globals ───────────────────────────────────────────────────────────────────
 
 _agent: Optional[WCAGAgent] = None
+_pointer: Optional[Molmo2Pointer] = None
 _runs: dict[str, dict] = {}  # run_id → run state
 
 TEST_MAP = {
@@ -163,14 +164,22 @@ async def websocket_run(ws: WebSocket, run_id: str):
             pass
 
     try:
-        global _agent
+        global _agent, _pointer
         if _agent is None:
-            await send({"type": "status", "message": "Loading OLMo2-7B-Instruct (first run takes ~30s)..."})
-            # Run model load in a thread so we don't block the event loop
+            await send({"type": "status", "message": "Loading OLMo2-7B-Instruct (narrative)..."})
             _agent = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: WCAGAgent(use_quantization=run["use_quantization"])
             )
-        await send({"type": "status", "message": "Model ready. Launching browser..."})
+        if _pointer is None:
+            await send({"type": "status", "message": "Loading Molmo2-4B (visual pointer)..."})
+            try:
+                _pointer = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: Molmo2Pointer(use_quantization=run["use_quantization"])
+                )
+            except Exception as e:
+                await send({"type": "status", "message": f"Molmo2 pointer unavailable ({e}) — running CSS-only mode."})
+                _pointer = None
+        await send({"type": "status", "message": "Models ready. Launching browser..."})
 
         run_dir = SCREENSHOTS_DIR / run_id
         run_dir.mkdir(exist_ok=True)
@@ -194,7 +203,12 @@ async def websocket_run(ws: WebSocket, run_id: str):
             tests_to_run = run["tests"]
             for i, test_id in enumerate(tests_to_run):
                 test_cls = TEST_MAP[test_id]
-                test = test_cls(agent=_agent, run_dir=run_dir)
+                # Pass Molmo2 pointer only to focus_indicator (the test that uses it)
+                test = test_cls(
+                    agent=_agent,
+                    run_dir=run_dir,
+                    pointer=_pointer if test_id == "focus_indicator" else None,
+                )
 
                 await send({
                     "type": "test_start",

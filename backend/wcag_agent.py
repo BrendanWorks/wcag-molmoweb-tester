@@ -1,46 +1,266 @@
 #!/usr/bin/env python3
 """
-WCAG Testing Agent — OLMo2 Report Narrator
-Uses allenai/OLMo-2-1124-7B-Instruct to generate professional
-accessibility narratives from programmatic test findings.
+WCAG Testing Agent — two-model architecture
 
-All 5 WCAG tests are fully programmatic (Playwright DOM/CSS inspection).
-OLMo2 is called once at the end to produce the executive summary.
+  WCAGAgent      allenai/OLMo-2-1124-7B-Instruct
+                 Text-only. Called once after all tests complete to
+                 produce the executive summary narrative.
+
+  Molmo2Pointer  allenai/Molmo2-4B
+                 Vision-language model used exclusively for POINTING.
+                 After a programmatic CSS check says "focus indicator
+                 exists", Molmo2 visually confirms: "Point to the
+                 element with keyboard focus."  If it cannot locate it,
+                 the indicator is technically present but visually
+                 insufficient — a class of failure DOM inspection alone
+                 cannot catch.
 """
 
 import asyncio
 import json
+import re
 from io import BytesIO
 from pathlib import Path
 import base64
+from typing import Optional
 
 from playwright.async_api import Page
 from PIL import Image
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    AutoModelForImageTextToText,
+    AutoProcessor,
+    LogitsProcessor,
+    LogitsProcessorList,
+)
 
+
+# ── Safe newline suppressor (prevents Molmo2 512-newline loop) ────────────────
+
+class ConsecutiveNewlineSuppressor(LogitsProcessor):
+    """
+    Hard-bans newline token (ID 198) after MAX_CONSECUTIVE consecutive
+    newlines.  Safe because it only writes to scores[:,198] — a known-
+    good vocabulary index.  Standard repetition_penalty crashes because
+    Molmo2 image-token IDs exceed vocab_size.
+    """
+    NEWLINE_ID = 198
+    MAX_CONSECUTIVE = 2
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        consecutive = 0
+        for tok in reversed(input_ids[0].tolist()):
+            if tok == self.NEWLINE_ID:
+                consecutive += 1
+            else:
+                break
+        if consecutive >= self.MAX_CONSECUTIVE:
+            scores[:, self.NEWLINE_ID] = -float("inf")
+        return scores
+
+
+# ── Molmo2 visual pointer ─────────────────────────────────────────────────────
+
+class Molmo2Pointer:
+    """
+    Thin wrapper around allenai/Molmo2-4B that exposes a single method:
+
+        point_to(screenshot, query) -> (x, y) | None
+
+    Molmo2's pointing capability is unique to AllenAI's model family —
+    no general-purpose API provides open pixel-coordinate output.
+    We use it to visually confirm what programmatic CSS inspection found.
+    """
+
+    MODEL_NAME = "allenai/Molmo2-4B"
+
+    def __init__(self, model_name: str = MODEL_NAME, use_quantization: bool = False):
+        self.model_name = model_name
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[Molmo2Pointer] Loading {model_name} on {self.device}...")
+
+        # ── Transformers 5.x compat patches ──────────────────────────────────
+        from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
+        if "default" not in ROPE_INIT_FUNCTIONS:
+            def _default_rope(config, device=None):
+                base = config.rope_theta
+                dim = config.head_dim
+                inv_freq = 1.0 / (
+                    base ** (torch.arange(0, dim, 2, dtype=torch.float32, device=device) / dim)
+                )
+                return inv_freq, 1.0
+            ROPE_INIT_FUNCTIONS["default"] = _default_rope
+
+        import transformers.processing_utils as _pu
+        _orig_pm_init = _pu.ProcessorMixin.__init__
+        def _lenient_init(self_proc, *args, **kwargs):
+            known = set(self_proc.get_attributes()) | {"chat_template", "audio_tokenizer"}
+            extras = {k: v for k, v in kwargs.items() if k not in known}
+            clean  = {k: v for k, v in kwargs.items() if k in known}
+            for k, v in extras.items():
+                setattr(self_proc, k, v)
+            return _orig_pm_init(self_proc, *args, **clean)
+        _pu.ProcessorMixin.__init__ = _lenient_init
+
+        self.processor = AutoProcessor.from_pretrained(
+            model_name, trust_remote_code=True, padding_side="left"
+        )
+
+        self.model_dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
+        model_kwargs: dict = {
+            "dtype": self.model_dtype,
+            "device_map": "auto" if self.device == "cuda" else None,
+            "trust_remote_code": True,
+        }
+        if use_quantization and self.device == "cuda":
+            from transformers import BitsAndBytesConfig
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+
+        self.model = AutoModelForImageTextToText.from_pretrained(model_name, **model_kwargs)
+        if self.device == "cpu":
+            self.model = self.model.to(self.device)
+        self.model.eval()
+
+        # cache_position shim (removed in transformers 5.x)
+        _orig_prepare = self.model.prepare_inputs_for_generation
+        def _patched_prepare(input_ids, past_key_values=None, cache_position=None, **kwargs):
+            if cache_position is None:
+                if past_key_values is None:
+                    cache_position = torch.arange(input_ids.shape[1], device=input_ids.device)
+                else:
+                    try:
+                        past_len = past_key_values.get_seq_length()
+                    except Exception:
+                        past_len = (
+                            past_key_values[0][0].shape[2]
+                            if isinstance(past_key_values, (list, tuple)) and past_key_values
+                            else input_ids.shape[1]
+                        )
+                    cache_position = torch.tensor([past_len], device=input_ids.device)
+            return _orig_prepare(
+                input_ids, past_key_values=past_key_values,
+                cache_position=cache_position, **kwargs,
+            )
+        self.model.prepare_inputs_for_generation = _patched_prepare
+
+        print("[Molmo2Pointer] Ready")
+
+    async def point_to(
+        self, screenshot: Image.Image, query: str
+    ) -> Optional[tuple[float, float]]:
+        """
+        Ask Molmo2: 'Point to [query]'.
+        Returns (x, y) pixel coordinates in screenshot space, or None.
+        Runs in a thread to avoid blocking the event loop.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._point_sync, screenshot, query)
+
+    def _point_sync(
+        self, screenshot: Image.Image, query: str
+    ) -> Optional[tuple[float, float]]:
+        try:
+            prompt = f"Point to: {query}"
+            messages = [{"role": "user", "content": [
+                {"type": "text",  "text": prompt},
+                {"type": "image", "image": screenshot},
+            ]}]
+            inputs = self.processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                return_dict=True,
+                add_generation_prompt=True,
+                return_tensors="pt",
+                padding=True,
+            )
+            inputs.pop("token_type_ids", None)
+            inputs = {
+                k: (v.to(self.device, dtype=self.model_dtype)
+                    if isinstance(v, torch.Tensor) and v.is_floating_point()
+                    else v.to(self.device) if isinstance(v, torch.Tensor)
+                    else v)
+                for k, v in inputs.items()
+            }
+            input_len = inputs["input_ids"].shape[1]
+
+            autocast_ctx = (
+                torch.autocast("cuda", dtype=torch.bfloat16)
+                if self.device == "cuda" else torch.no_grad()
+            )
+            with torch.inference_mode(), autocast_ctx:
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=80,
+                    do_sample=False,          # Greedy — pointing is deterministic
+                    logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
+                )
+
+            new_tokens = outputs[0][input_len:]
+            response = self.processor.decode(new_tokens, skip_special_tokens=True).strip()
+            print(f"[Molmo2] point_to '{query[:40]}' → {response[:80]}")
+
+            coords = self._parse_point(response, screenshot.size)
+            return coords
+
+        except Exception as e:
+            print(f"[Molmo2] point_to error: {e}")
+            return None
+
+    @staticmethod
+    def _parse_point(
+        response: str, img_size: tuple[int, int]
+    ) -> Optional[tuple[float, float]]:
+        """
+        Parse Molmo's pointing output into pixel coordinates.
+        Handles two formats:
+          <point x="X" y="Y"> — Molmo base (coords in 0-100 percent-of-image space)
+          {"coordinate": [x, y]}  — MolmoWeb action format (absolute pixels)
+        """
+        w, h = img_size
+
+        # Format 1: <point x="..." y="...">
+        m = re.search(
+            r'<point[^>]*\bx=["\']?([\d.]+)["\']?[^>]*\by=["\']?([\d.]+)["\']?',
+            response, re.IGNORECASE,
+        )
+        if m:
+            x, y = float(m.group(1)), float(m.group(2))
+            # Molmo uses 0–100 range (percent); convert to pixels
+            if x <= 100 and y <= 100:
+                x, y = x / 100 * w, y / 100 * h
+            return x, y
+
+        # Format 2: {"coordinate": [x, y]} or {"action": "click", "coordinate": [...]}
+        m2 = re.search(r'"coordinate"\s*:\s*\[\s*([\d.]+)\s*,\s*([\d.]+)\s*\]', response)
+        if m2:
+            return float(m2.group(1)), float(m2.group(2))
+
+        return None
+
+
+# ── OLMo2 narrative agent ─────────────────────────────────────────────────────
 
 class WCAGAgent:
     MODEL_NAME = "allenai/OLMo-2-1124-7B-Instruct"
 
-    def __init__(
-        self,
-        model_name: str = MODEL_NAME,
-        use_quantization: bool = False,
-    ):
+    def __init__(self, model_name: str = MODEL_NAME, use_quantization: bool = False):
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        print(f"Initializing WCAG agent on {self.device}")
-        print(f"Loading {model_name}...")
-
+        print(f"[OLMo2] Loading {model_name} on {self.device}...")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         model_kwargs: dict = {
             "torch_dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
             "device_map": "auto" if self.device == "cuda" else None,
         }
-
         if use_quantization and self.device == "cuda":
             from transformers import BitsAndBytesConfig
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
@@ -54,20 +274,13 @@ class WCAGAgent:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
-        print("WCAG OLMo2 agent ready")
-
-    # ── Narrative generation ───────────────────────────────────────────────────
+        print("[OLMo2] Ready")
 
     async def generate_narrative(self, results: list, url: str) -> str:
-        """
-        Produces a professional executive summary from structured test results.
-        Runs OLMo2 inference in a thread to avoid blocking the async event loop.
-        """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._narrative_sync, results, url)
 
     def _narrative_sync(self, results: list, url: str) -> str:
-        """Synchronous OLMo2 text generation."""
         try:
             findings = [
                 {
@@ -80,20 +293,18 @@ class WCAGAgent:
                 }
                 for r in results
             ]
-
-            failed = [f for f in findings if f["result"] == "fail"]
             passed = [f for f in findings if f["result"] == "pass"]
 
             prompt = (
                 f"You are a professional web accessibility auditor. "
-                f"You have just completed a WCAG 2.1 Level AA automated audit of: {url}\n\n"
-                f"Test findings:\n{json.dumps(findings, indent=2)}\n\n"
-                f"Write a concise executive summary (3–4 paragraphs) that:\n"
-                f"1. States overall compliance status ({len(passed)}/{len(findings)} tests passed)\n"
-                f"2. Highlights the most critical issues with specific WCAG criteria references\n"
-                f"3. Provides prioritized, actionable remediation steps for developers\n"
-                f"4. Notes what is working well\n\n"
-                f"Be specific, professional, and address the development team directly."
+                f"You have completed a WCAG 2.1 Level AA audit of: {url}\n\n"
+                f"Findings:\n{json.dumps(findings, indent=2)}\n\n"
+                f"Write a concise executive summary (3–4 paragraphs) covering:\n"
+                f"1. Overall compliance ({len(passed)}/{len(findings)} tests passed)\n"
+                f"2. Most critical issues with WCAG criteria references\n"
+                f"3. Prioritized, actionable remediation steps\n"
+                f"4. What is working well\n\n"
+                f"Be specific and address the development team directly."
             )
 
             messages = [{"role": "user", "content": prompt}]
@@ -113,20 +324,18 @@ class WCAGAgent:
 
             new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
             narrative = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-            print(f"[OLMo2] Narrative generated ({len(narrative)} chars)")
+            print(f"[OLMo2] Narrative: {len(narrative)} chars")
             return narrative
 
         except Exception as e:
-            print(f"[OLMo2] Narrative generation error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[OLMo2] Narrative error: {e}")
+            import traceback; traceback.print_exc()
             return ""
 
-    # ── Screenshot utilities (used by all tests) ──────────────────────────────
+    # ── Screenshot utilities ──────────────────────────────────────────────────
 
     @staticmethod
     async def screenshot_to_image(page: Page) -> Image.Image:
-        """Capture current page as PIL Image."""
         raw = await page.screenshot(full_page=False)
         return Image.open(BytesIO(raw))
 

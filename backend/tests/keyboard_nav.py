@@ -173,26 +173,13 @@ class KeyboardNavTest(BaseWCAGTest):
                 else f"<{focus_info['tag']}>"
             )
 
-            if not has_outline and not has_shadow:
-                screenshot = await self.agent.screenshot_to_image(page)
-                sp = self.agent.save_screenshot(screenshot, self.run_dir, f"keyboard_tab{tab_num}")
-                sb64 = self.agent.image_to_base64(screenshot)
-                analysis = {
-                    "result": "fail",
-                    "failure_reason": f"No visible focus indicator on {el_desc}",
-                    "wcag_criteria": ["2.4.7"],
-                    "severity": "major",
-                    "recommendation": (
-                        "Add :focus { outline: 2px solid #005fcc; outline-offset: 2px; } "
-                        "or equivalent box-shadow. Never remove focus styles without an alternative."
-                    ),
-                }
-                failures.append({
-                    "tab": tab_num, "focus_info": focus_info,
-                    "analysis": analysis, "screenshot_path": sp, "screenshot_b64": sb64,
-                })
-            else:
-                analysis = {"result": "pass", "focused_element": el_desc}
+            # Note: focus indicator quality is owned by focus_indicator test (2.4.7).
+            # Here we only record whether the element received focus at all (2.1.1).
+            analysis = {
+                "result": "pass",
+                "focused_element": el_desc,
+                "has_focus_style": has_outline or has_shadow,
+            }
 
             steps.append({"tab": tab_num, "focus_info": focus_info, "analysis": analysis})
 
@@ -204,32 +191,21 @@ class KeyboardNavTest(BaseWCAGTest):
         summary_path = self.agent.save_screenshot(summary, self.run_dir, "keyboard_summary")
         summary_b64 = self.agent.image_to_base64(summary)
 
-        all_failures = static_failures + failures
+        all_failures = static_failures  # tab-trap failures come from early return above
         all_warnings = static_warnings
 
         if all_failures:
-            # Prioritise tab-trap > JS-only links > focus indicator failures
-            if failures:
-                worst = failures[0]
-                a = worst["analysis"]
-                failure_reason = a.get("failure_reason", "")
-                wcag = a.get("wcag_criteria", self.WCAG_CRITERIA)
-                severity = a.get("severity", self.DEFAULT_SEVERITY)
-                sp = worst.get("screenshot_path") or summary_path
-                sb64 = worst.get("screenshot_b64") or summary_b64
-            else:
-                issue = static_failures[0]
-                failure_reason = issue["description"]
-                if issue.get("examples"):
-                    failure_reason += f" Examples: {'; '.join(issue['examples'][:2])}"
-                wcag = [issue["criterion"]]
-                severity = issue["severity"]
-                sp, sb64 = summary_path, summary_b64
-
-            # Append static issue summary to reason
-            if static_failures and failures:
-                extras = "; ".join(i["description"] for i in static_failures[:2])
-                failure_reason += f" Also: {extras}"
+            # Consolidate all static failures into one report
+            issue = static_failures[0]
+            failure_reason = "; ".join(i["description"] for i in static_failures[:3])
+            all_examples = []
+            for i in static_failures[:2]:
+                all_examples.extend(i.get("examples", [])[:2])
+            if all_examples:
+                failure_reason += f" — e.g.: {'; '.join(all_examples[:3])}"
+            wcag = list(dict.fromkeys(i["criterion"] for i in static_failures))
+            severity = "major"
+            sp, sb64 = summary_path, summary_b64
 
             result = TestResult(
                 test_id=self.TEST_ID,

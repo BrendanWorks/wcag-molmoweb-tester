@@ -246,7 +246,17 @@ async def websocket_run(ws: WebSocket, run_id: str):
         report = generate_report(run)
         run["report"] = report
 
-        await send({"type": "done", "run_id": run_id, "report": report})
+        # Strip base64 screenshots before sending over WebSocket —
+        # they're already in the individual `result` events and can push
+        # the payload over the 1MB WS frame limit on screenshot-heavy runs.
+        def _strip_b64(obj):
+            if isinstance(obj, dict):
+                return {k: _strip_b64(v) for k, v in obj.items() if k != "screenshot_b64"}
+            if isinstance(obj, list):
+                return [_strip_b64(i) for i in obj]
+            return obj
+
+        await send({"type": "done", "run_id": run_id, "report": _strip_b64(report)})
 
     except WebSocketDisconnect:
         run["status"] = "disconnected"

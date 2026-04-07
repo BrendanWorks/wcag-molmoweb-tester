@@ -43,6 +43,7 @@ image = (
     image=image,
     gpu="A10G",
     timeout=900,
+    env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
 )
 @modal.concurrent(max_inputs=5)
 @modal.asgi_app()

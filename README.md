@@ -138,6 +138,35 @@ NEXT_PUBLIC_API_URL=https://<your-modal-endpoint>.modal.run
 
 ---
 
+## Validation — Multi-Site Testing
+
+The tool was validated against five external sites to confirm real catches, expose false positives/negatives, and drive bug fixes.
+
+| Site | Purpose | Key Outcome |
+|---|---|---|
+| [W3C WAI "BAD" Demo](https://www.w3.org/WAI/demos/bad/) | W3C's official intentionally-broken accessibility demo — ground truth | Found + fixed 2 false negatives |
+| [UK Government Design System (GDS)](https://design-system.service.gov.uk) | High-quality accessible government site | Confirmed true-positive / true-negative balance |
+| Mars Commuter | JS-heavy site with modals, dropdowns, dynamic content | Confirmed correct handling of complex components |
+| [Accessible University 3.0](https://www.washington.edu/accesscomputing/AU/) (U. Washington) | Before/after accessibility demo with intentional failures | Confirmed multi-page site handling |
+| [Tenon UI](https://tenon-ui.info) | Intentionally *accessible* React component library — adversarial false-positive test | Found + fixed 1 false positive |
+
+### Results by site
+
+**W3C WAI "BAD" Demo** — all documented failures caught (keyboard JS-only links, contrast, focus, zoom, form labels). Two bugs fixed:
+- **Contrast false negative** — `getEffectiveBg()` was skipping `rgba(0,0,0,0)` transparent elements. Rewrote to composite alpha layers up the full DOM tree, catching contrast failures on elements with inherited backgrounds.
+- **Keyboard false negative** — tab traversal alone missed JS-only links. Added `KEYBOARD_STATIC_JS` pre-scan for `javascript:` hrefs, `onclick` on non-interactive elements, `onmouseover` without `onfocus`, and missing skip navigation.
+
+**GDS** — no false positives on well-built accessible code. Zoom correctly flagged text clipping; focus, contrast, and keyboard all passed cleanly.
+
+**Mars Commuter** — keyboard JS links detected, contrast failures caught, 5 unlabeled form fields identified. Zoom correctly passed. Tool handled iframe focus issues correctly.
+
+**Accessible University 3.0** — contrast failure caught at 2.52:1 (well below 4.5:1 threshold), 5 unlabeled form fields detected, focus styles correctly flagged as absent. Zoom correctly passed on a site that reflows properly.
+
+**Tenon UI** — all tests correctly passed except one false positive fixed:
+- **Zoom false positive on skip links** — "Skip to content" links are intentionally off-screen (`position:absolute; left:-9999px`) until focused. Tool was incorrectly flagging them as clipped text. Fixed by adding off-screen detection and skip link filter in the clipped element JS scan.
+
+---
+
 ## WCAG Coverage
 
 | Principle | Criteria Tested |

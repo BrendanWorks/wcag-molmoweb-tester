@@ -42,7 +42,17 @@ class ZoomTest(BaseWCAGTest):
             const clipped = textEls.filter(el => {
                 const s = window.getComputedStyle(el);
                 const r = el.getBoundingClientRect();
+                // Skip off-screen / visually-hidden elements (skip links, SR-only text).
+                // These are intentionally hidden and their overflow state is irrelevant.
+                const offScreen = r.left < -200 || r.top < -200;
+                const tinyOrHidden = (r.width < 2 && r.height < 2) ||
+                                     s.visibility === 'hidden' || s.display === 'none';
+                // Skip if the element is a common skip-link pattern
+                const isSkipLink = el.tagName === 'A' &&
+                    ((el.getAttribute('href') || '').startsWith('#')) &&
+                    offScreen;
                 return (
+                    !offScreen && !tinyOrHidden && !isSkipLink &&
                     r.width > 0 && r.height > 0 &&
                     (s.overflow === 'hidden' || s.textOverflow === 'ellipsis') &&
                     el.scrollWidth > el.clientWidth + 2

@@ -166,7 +166,9 @@ class FocusIndicatorTest(BaseWCAGTest):
                             f"CSS reports focus indicator ({indicator_desc}) on {el_desc}, "
                             f"but Molmo2 could not locate the focused element visually. "
                             f"The indicator may be present but visually insufficient "
-                            f"(too low contrast, too thin, or obscured)."
+                            f"(too low contrast, too thin, or obscured). "
+                            f"Note: if this is a skip-navigation link that appears off-screen "
+                            f"until focused, this warning may not apply."
                         ),
                         "wcag_criteria": ["2.4.7"],
                         "severity": "major",

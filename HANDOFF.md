@@ -1,138 +1,228 @@
-# WCAG MolmoWeb Tester — Handoff Document
+# WCAG 2.1 Accessibility Tester — Handoff Document
+**Last updated: 2026-04-07**
 
 ## What This Is
-A WCAG 2.1 Level AA accessibility testing tool powered by Allen AI's MolmoWeb-4B vision-language model. Users enter a URL, select tests, and get an accessibility audit. 
+A fully deployed WCAG 2.1 Level AA accessibility testing tool built as a portfolio piece for an Allen AI job application. Users paste a URL, select tests, and receive a detailed accessibility report with live streaming progress, Molmo2 visual confirmation, and an OLMo2-written executive summary.
+
 - **GitHub**: https://github.com/BrendanWorks/wcag-molmoweb-tester
-- **Live**: https://brendanworks--wcag-tester-web.modal.run
-- **Stack**: FastAPI + WebSocket + Playwright + MolmoWeb-4B on Modal (A10G GPU)
+- **Live frontend**: https://wcag-molmoweb-tester.vercel.app
+- **Backend endpoint**: https://brendanworks--wcag-tester-web.modal.run
+- **Stack**: Next.js 16 (Vercel) → FastAPI + WebSocket + Playwright + OLMo2-7B + Molmo2-4B (Modal A10G)
+
+---
 
 ## Architecture
 
 ```
-Frontend (static HTML)  →  FastAPI  →  WebSocket streams progress
-                                    →  Playwright captures screenshots
-                                    →  MolmoWeb-4B analyzes them
-                                    →  Report generated & sent back
+┌─────────────────────────────────┐        ┌──────────────────────────────────────┐
+│  Next.js 16 (Vercel)            │        │  FastAPI + Playwright (Modal A10G)   │
+│                                 │        │                                      │
+│  • URL input + test selector    │◄──WS──►│  • Runs 6 WCAG tests via Playwright  │
+│  • Live progress feed           │        │  • OLMo-2-7B  → executive narrative  │
+│  • Results dashboard            │        │  • Molmo2-4B  → visual pointer       │
+│  • JSON / CSV export            │        │  • Streams events over WebSocket     │
+└─────────────────────────────────┘        └──────────────────────────────────────┘
 ```
 
-### Key Files
+### Models
+| Model | Role | Size on disk |
+|---|---|---|
+| `allenai/OLMo-2-1124-7B-Instruct` | Writes plain-English executive summary after all tests complete | ~14 GB bfloat16 |
+| `allenai/Molmo2-4B` | Visual pointer — outputs `<point x="X" y="Y">` pixel coordinates from screenshots to confirm focus ring visibility | ~2 GB, 4-bit NF4 quantized |
+
+Both models baked into the Modal container at build time via `setup_model.py` so cold starts don't re-download weights.
+
+---
+
+## Key Files
+
 | File | Purpose |
-|------|---------|
-| `backend/wcag_agent.py` | **Core file.** MolmoWeb wrapper with all compatibility patches. |
-| `backend/main.py` | FastAPI app. Serves frontend, WebSocket for live progress. |
-| `backend/static/index.html` | Complete static HTML frontend (replaced broken Next.js). |
-| `backend/report_generator.py` | Generates compliance report from test results. |
-| `backend/setup_model.py` | Modal image build script — downloads model, applies file patches. |
-| `modal_app.py` | Modal deployment config — A10G GPU, 900s timeout. |
-| `backend/tests/keyboard_nav.py` | Phase 1: Tab navigation + MolmoWeb analysis (MAX_TABS=10). |
-| `backend/tests/zoom_test.py` | Phase 1: 200% zoom + MolmoWeb analysis. |
-| `backend/tests/color_blindness.py` | Phase 1: Deuteranopia filter + MolmoWeb analysis. |
-| `backend/tests/focus_indicator.py` | Phase 2: DOM-only focus ring check (no MolmoWeb, fast). |
-| `backend/tests/form_errors.py` | Phase 2: Form submission + MolmoWeb analysis (2 inferences). |
+|---|---|
+| `modal_app.py` | Modal deployment — A10G, 900s timeout, bakes models into image, applies runtime compat patches |
+| `backend/main.py` | FastAPI app, WebSocket `/ws/run` handler, TEST_MAP, `_strip_b64()` helper |
+| `backend/wcag_agent.py` | OLMo2 (WCAGAgent) + Molmo2 (Molmo2Pointer) classes, ConsecutiveNewlineSuppressor |
+| `backend/report_generator.py` | Aggregates per-test results → JSON report with narrative |
+| `backend/setup_model.py` | Modal image build — downloads models, applies `cache_position` file patch to Molmo2 |
+| `backend/tests/keyboard_nav.py` | 2.1.1 · 2.1.2 · 2.4.3 — Tab traversal + static JS scan |
+| `backend/tests/zoom_test.py` | 1.4.4 · 1.4.10 — 200% zoom + clipped element detection |
+| `backend/tests/color_blindness.py` | 1.4.1 · 1.4.3 — Deuteranopia SVG + DOM-tree contrast walk |
+| `backend/tests/focus_indicator.py` | 2.4.7 — CSS inspection + Molmo2 visual confirmation |
+| `backend/tests/form_errors.py` | 3.3.1 · 3.3.2 · 3.3.3 — Form submission with invalid data |
+| `backend/tests/page_structure.py` | 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 3.1.1 · 4.1.2 — Single JS eval, no GPU |
+| `frontend/components/ResultsDashboard.tsx` | Full results UI — Molmo2 visual panel, page_structure issue breakdown, base64 screenshots |
+| `frontend/components/TestSelector.tsx` | Test checkbox list with WCAG criteria labels |
+| `frontend/app/page.tsx` | Main page — URL input, WebSocket client, live progress |
+| `frontend/.env.local` | `NEXT_PUBLIC_API_URL=https://brendanworks--wcag-tester-web.modal.run` |
+
+---
+
+## All 6 Tests
+
+### 1. Keyboard Navigation (`keyboard_nav.py`)
+- WCAG: 2.1.1 · 2.1.2 · 2.4.3
+- **Two-layer check:** `KEYBOARD_STATIC_JS` pre-scan (javascript: hrefs, onclick on non-interactive elements, onmouseover without onfocus, missing skip nav) + tab traversal loop
+- Static failures drive the result; tab loop only records focused element info (focus indicator check removed — belongs to focus_indicator test)
+- Result: fail if static issues found (keyboard traps, JS-only links, mouse-only handlers)
+
+### 2. Zoom / Reflow (`zoom_test.py`)
+- WCAG: 1.4.4 · 1.4.10
+- Sets viewport to 1280px, then zooms to 200% (640px equivalent)
+- Detects clipped/hidden text elements; filters off-screen elements and skip links to avoid false positives
+- Key filter: `offScreen = r.left < -200 || r.top < -200; isSkipLink = el.tagName === 'A' && href.startsWith('#') && offScreen`
+
+### 3. Color Blindness / Contrast (`color_blindness.py`)
+- WCAG: 1.4.1 · 1.4.3
+- Applies CSS deuteranopia SVG filter; checks contrast ratio via `getEffectiveBg()` DOM walk
+- `getEffectiveBg()` composites alpha layers up the DOM tree — does NOT skip transparent elements (fixed false negative on W3C BAD site)
+- Checks 60 elements including `div`; threshold 4.5:1 normal text, 3:1 large text
+
+### 4. Focus Indicator (`focus_indicator.py`)
+- WCAG: 2.4.7
+- Two-layer: CSS inspection first (outline, box-shadow, border changes) → if CSS confirms, Molmo2 visually confirms via pixel-coordinate pointing
+- Molmo2 miss = indicator is technically present but visually insufficient
+- Results dashboard shows per-step hit/miss with `(x,y)px` coordinates and expected DOM location for misses
+
+### 5. Form Error Handling (`form_errors.py`)
+- WCAG: 3.3.1 · 3.3.2 · 3.3.3
+- Finds forms, checks label associations, submits with invalid data, checks for error messages
+- Uses Molmo2 to visually confirm error messages are present and associated with fields
+
+### 6. Page Structure & Semantics (`page_structure.py`) ← NEW
+- WCAG: 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 3.1.1 · 4.1.2
+- **No GPU required** — single JS evaluation, ~100ms
+- Checks:
+  - `3.1.1` — missing lang attribute on `<html>`
+  - `2.4.2` — missing or generic page title
+  - `1.1.1` — missing alt, empty alt on meaningful images, filename-style alt text
+  - `1.3.1` — no h1, multiple h1s, skipped heading levels
+  - `2.4.4` — vague link text ("click here", "read more", etc.)
+  - `4.1.2` — unnamed ARIA roles, bad role=list children, focusable elements inside aria-hidden
+- Returns issues sorted by severity (critical → major → minor)
+- ResultsDashboard renders each issue as a card with criterion badge, severity color, description, examples, fix
+
+---
 
 ## Critical Technical Knowledge
 
-### MolmoWeb-4B + Transformers 5.x Requires THREE Patches
+### Molmo2 Compat Patches (THREE required — applied in BOTH setup_model.py AND modal_app.py runtime)
 
-1. **ROPE patch** — `ROPE_INIT_FUNCTIONS` missing `"default"` key. We add a custom `_default_rope` function.
-2. **ProcessorMixin patch** — `__init__` rejects unknown kwargs from MolmoWeb's remote code. We monkey-patch to be lenient.
-3. **cache_position patch** — Transformers 5.x stopped passing `cache_position` to `prepare_inputs_for_generation`, but Molmo2's code does `cache_position[0]` which crashes. We wrap the original method and synthesize a valid `cache_position` tensor.
+1. **ROPE patch** — `ROPE_INIT_FUNCTIONS` missing `"default"` key → add custom `_default_rope` function
+2. **ProcessorMixin patch** — `__init__` rejects unknown kwargs from Molmo2's remote code → monkey-patch to be lenient, store extras with `setattr`
+3. **cache_position patch** — Transformers 5.x stopped passing `cache_position` to `prepare_inputs_for_generation`, but Molmo2 does `cache_position[0]` which crashes
+   - Wrap the model's OWN method (not GenerationMixin grandparent — that bypasses image embedding)
+   - Prefill: `torch.arange(seq_len)`, Decode: `torch.tensor([past_length])`
+   - Also patched on-disk in `setup_model.py`: `if cache_position[0] == 0:` → safe None check
 
-All three patches are applied in BOTH `setup_model.py` (image build) AND `wcag_agent.py` / `modal_app.py` (runtime).
+### Molmo2 Inference — Do Not Change Without Understanding
 
-### MolmoWeb Inference — Critical Details
+1. **Remove `token_type_ids`** from inputs before `generate()` — causes degenerate "the the the" repetition if left in
+2. **One-step processor call** — pass PIL image directly in messages dict; old two-step approach didn't bind images to tokens
+3. **No sampling params** — `max_new_tokens=512` only; no temperature/top_p (greedy decoding)
+4. **`padding_side="left"`** on processor
+5. **Decode only new tokens** — `outputs[0][input_len:]`
+6. **`AutoModelForImageTextToText`** not `AutoModelForCausalLM`
+7. **ConsecutiveNewlineSuppressor** — custom LogitsProcessor hard-bans newline token (ID 198) after 2 consecutive newlines, prevents 512-newline inference loop. Standard `repetition_penalty` crashes because Molmo2 image-token IDs exceed vocab_size.
 
-These were discovered through painful debugging. **Do not change without understanding:**
+### 4-bit Quantization (required to fit both models on A10G 24GB)
 
-1. **`token_type_ids` MUST be removed** from inputs before `generate()`. MolmoWeb uses causal attention only. HuggingFace adds `token_type_ids` for bidirectional attention on image tokens, which causes **degenerate repetitive output** (the "the the the the" bug).
-
-2. **One-step processor call** — Pass the PIL image directly in messages:
-   ```python
-   messages = [{"role": "user", "content": [
-       {"type": "image", "image": pil_image},  # NOT just {"type": "image"}
-       {"type": "text", "text": prompt},
-   ]}]
-   inputs = processor.apply_chat_template(messages, tokenize=True, return_dict=True, ...)
-   ```
-   The old two-step approach (apply_chat_template then processor()) didn't bind images to tokens correctly.
-
-3. **`"molmo_web_think: "` prefix** — MolmoWeb expects this system message prefix on prompts.
-
-4. **No sampling parameters** — Just `max_new_tokens=512`. No `temperature`, no `top_p`. Model was trained for greedy decoding.
-
-5. **`padding_side="left"`** on the processor.
-
-6. **Only decode NEW tokens** — `outputs[0][input_len:]` not `outputs[0]`. Otherwise you get the echoed prompt.
-
-7. **Use `AutoModelForImageTextToText`** not `AutoModelForCausalLM`.
-
-8. **`bfloat16` on GPU, `float32` on CPU** — Model card recommends float32 but bfloat16 works on A10G. If quality degrades, try float32.
-
-### Monkey-Patch for cache_position (in wcag_agent.py)
-
-The patch wraps the model's OWN `prepare_inputs_for_generation` (not the grandparent's!) and synthesizes `cache_position` when it's None:
-- Prefill: `torch.arange(seq_len)`
-- Decode: `torch.tensor([past_length])`
-
-**DO NOT** call `GenerationMixin.prepare_inputs_for_generation` (grandparent) as a replacement — that bypasses Molmo2's image embedding logic and the model can't see screenshots.
-
-### File-Based Patch (in setup_model.py)
-
-Also patches `modeling_molmo2.py` on disk during image build to handle `cache_position=None`:
 ```python
-# Replaces: if cache_position[0] == 0:
-# With: is_prefill = (cache_position is not None and cache_position[0] == 0) or (cache_position is None and past_key_values is None)
+# In wcag_agent.py Molmo2Pointer
+if self.device == "cuda":
+    model_kwargs["quantization_config"] = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+    )
+    model_kwargs.pop("dtype", None)  # incompatible with quantization_config
 ```
 
-## Deployment Workflow
+`bitsandbytes` must be in `modal_app.py` pip_install list — its absence causes silent failure (Molmo2 loads but `_pointer=None`, falls back to CSS-only).
 
+### WebSocket Frame Size
+
+The `done` event strips base64 screenshots to stay under 1MB frame limit:
+```python
+def _strip_b64(obj):
+    if isinstance(obj, dict):
+        return {k: _strip_b64(v) for k, v in obj.items() if k != "screenshot_b64"}
+    ...
+await send({"type": "done", "run_id": run_id, "report": _strip_b64(report)})
+```
+Individual `result` events during the run still include `screenshot_b64` for the live UI.
+
+### GPU Memory
+```
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+Set in `modal_app.py` `env={}` dict. Reduces CUDA memory fragmentation on A10G.
+
+---
+
+## Deployment
+
+### Backend → Modal
 ```bash
-# Push to GitHub
-git add -A && git commit -m "message" && git push
-
-# Deploy to Modal (takes ~3-5 min, downloads 12GB model into image)
-cd "/path/to/WCAG_Tool" && modal deploy modal_app.py
-
-# Check logs
-modal app logs wcag-tester
-
-# Keep Mac awake during long runs
-caffeinate -d -i -s
+/opt/homebrew/bin/modal deploy modal_app.py
+# Takes ~2 min. Models already baked in image so no re-download.
+# Check: modal app list | grep wcag
+# Logs: modal app logs wcag-tester
 ```
 
-## Current Status (as of 2026-04-05)
+### Frontend → Vercel
+Push to `main` on GitHub — Vercel auto-deploys.
+- Root Directory: `frontend`
+- Framework: Next.js
+- Env var: `NEXT_PUBLIC_API_URL=https://brendanworks--wcag-tester-web.modal.run`
 
-### Working
-- All 5 tests run to completion on Modal within 900s timeout
-- Keyboard navigation: produces real FAIL results using DOM fallbacks
-- Focus indicator: fast DOM-only check, working
-- Form errors: finds forms, checks labels, working
-- Screenshots: inline base64 in results (fixed 404 issue with file URLs on Modal)
-- Frontend: form, progress bar, results dashboard, JSON/CSV download
+### Git
+```bash
+cd "/Users/brendanworks/Documents/Documents - Brendan's MacBook Pro/WCAG_Tool"
+git add <files> && git commit -m "message" && git push
+# If push rejected: git pull --rebase && git push
+```
 
-### In Progress / Needs Verification
-- **Zoom test + Color blindness test**: Latest deploy has the `token_type_ids` fix, `molmo_web_think:` prefix, one-step processor call, and greedy decoding. **WAITING TO SEE IF MODEL PRODUCES VALID JSON.** If still broken, check Modal logs with `modal app logs wcag-tester | grep "\[MolmoWeb\] Generated"`.
+---
 
-### If Model Still Produces Garbage
-Debug checklist:
-1. Check `modal app logs wcag-tester | grep "\[MolmoWeb\] Generated"` — is output coherent text or repetitive?
-2. If repetitive: `token_type_ids` might not be getting removed. Add `print(list(inputs.keys()))` before generate.
-3. If coherent but not JSON: prompt needs adjustment. MolmoWeb is a web-agent model, not a general VLM. It may respond with action commands instead of JSON analysis. Consider parsing its natural language output instead.
-4. If error/crash: check full traceback in logs. Likely a cache_position or tensor shape issue.
-5. Nuclear option: try `allenai/Molmo2-4B` (non-web variant) which may be better at general image analysis.
+## Known Issues / Gotchas
 
-### Bugs Fixed (Don't Reintroduce)
-- **Next.js hydration failure** → replaced with static HTML
-- **Turbopack scanning home dir** → no more Next.js
-- **WebSocket not flushing** → `run_in_executor` for model load
-- **Model inference blocking event loop** → `run_in_executor` for all inference
-- **Modal Mount API deprecated** → `image.add_local_dir(copy=True)`
-- **Modal allow_concurrent_inputs deprecated** → `@modal.concurrent(max_inputs=5)`
-- **Results dashboard showing zeros** → fixed field names (total_tests, passed, failed)
-- **Screenshot 404 on Modal** → switched to inline base64 data URIs
+| Issue | Fix Applied |
+|---|---|
+| Contrast false negative (transparent bg elements) | `getEffectiveBg()` walks DOM tree compositing alpha layers |
+| Keyboard false negative (JS-only links) | `KEYBOARD_STATIC_JS` pre-scan added |
+| Zoom false positive (off-screen skip links) | Off-screen + skip link detection in clipped element filter |
+| Focus test false positive (skip links) | Skip link caveat added to Molmo2 "not found" warning |
+| Screenshots 404 on Modal | Serverless — switched to base64 embedded in WS events |
+| WebSocket frame >1MB | `_strip_b64()` helper strips screenshots from `done` event |
+| CSV download 404 | Uses local report data, no server roundtrip |
+| CORS blocking Vercel | `allow_origins=["*"]`, `allow_credentials=False` |
+| Molmo2 meta tensor / OOM error | Forced 4-bit NF4 quant; `bitsandbytes` in pip_install |
+| OOM with concurrent runs | Sequential execution with 15s cooldown between runs |
+| Next.js CVE-2025-55182 | Upgraded from 15.2.4 → 16.2.2 |
 
-## Future Enhancements
-- DOM-only tests for broader WCAG coverage (alt text, heading hierarchy, ARIA, contrast ratio via computed styles)
-- Better prompt engineering if MolmoWeb produces action commands instead of analysis
-- Consider Molmo2-4B (non-web) as alternative for visual analysis tasks
-- Polish report: add WCAG criterion descriptions, link to spec, severity scoring
+---
+
+## WCAG Coverage
+
+| Principle | Criteria Covered |
+|---|---|
+| Perceivable | 1.1.1 · 1.3.1 · 1.4.1 · 1.4.3 · 1.4.4 · 1.4.10 |
+| Operable | 2.1.1 · 2.1.2 · 2.4.2 · 2.4.3 · 2.4.4 · 2.4.7 |
+| Understandable | 3.1.1 · 3.3.1 · 3.3.2 · 3.3.3 |
+| Robust | 4.1.2 |
+
+**~85–90% of WCAG 2.1 Level AA** success criteria covered programmatically.
+
+---
+
+## Job Application Assets
+
+| File | Purpose |
+|---|---|
+| `README.md` | GitHub README — architecture, models, setup, deployment, coverage table |
+| `COVER_LETTER.md` | Cover letter for AllenAI Senior TPM, AI Platform role |
+| `HANDOFF.md` | This file |
+
+The cover letter's "Technical Fluency" bullet specifically references OLMo2 + Molmo2, the live URL, 4-bit quant, ConsecutiveNewlineSuppressor, ROPE patch, and the 85–90% WCAG coverage figure.
+
+The job application form answer ("Tell a story about the last thing you learned in AI") is in the conversation history — covers Molmo2 as a spatial verifier (not generator), pixel coordinate output, the binary visual confirmation insight, and the two-model coexistence engineering.

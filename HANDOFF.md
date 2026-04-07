@@ -48,7 +48,7 @@ Both models baked into the Modal container at build time via `setup_model.py` so
 | `backend/tests/color_blindness.py` | 1.4.1 · 1.4.3 — Deuteranopia SVG + DOM-tree contrast walk |
 | `backend/tests/focus_indicator.py` | 2.4.7 — CSS inspection + Molmo2 visual confirmation |
 | `backend/tests/form_errors.py` | 3.3.1 · 3.3.2 · 3.3.3 — Form submission with invalid data |
-| `backend/tests/page_structure.py` | 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 3.1.1 · 4.1.2 — Single JS eval, no GPU |
+| `backend/tests/page_structure.py` | 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 2.5.5 · 3.1.1 · 4.1.2 — Single JS eval, no GPU |
 | `frontend/components/ResultsDashboard.tsx` | Full results UI — Molmo2 visual panel, page_structure issue breakdown, base64 screenshots |
 | `frontend/components/TestSelector.tsx` | Test checkbox list with WCAG criteria labels |
 | `frontend/app/page.tsx` | Main page — URL input, WebSocket client, live progress |
@@ -60,9 +60,10 @@ Both models baked into the Modal container at build time via `setup_model.py` so
 
 ### 1. Keyboard Navigation (`keyboard_nav.py`)
 - WCAG: 2.1.1 · 2.1.2 · 2.4.3
-- **Two-layer check:** `KEYBOARD_STATIC_JS` pre-scan (javascript: hrefs, onclick on non-interactive elements, onmouseover without onfocus, missing skip nav) + tab traversal loop
+- **Two-layer check:** `KEYBOARD_STATIC_JS` pre-scan (javascript: hrefs, onclick on non-interactive elements, onmouseover without onfocus, missing skip nav, **positive tabindex values**) + tab traversal loop
 - Static failures drive the result; tab loop only records focused element info (focus indicator check removed — belongs to focus_indicator test)
-- Result: fail if static issues found (keyboard traps, JS-only links, mouse-only handlers)
+- Result: fail if static issues found (keyboard traps, JS-only links, mouse-only handlers, tab order overrides)
+- Positive tabindex check: any `tabindex > 0` is a 2.4.3 major failure — reports tag, value, and label text
 
 ### 2. Zoom / Reflow (`zoom_test.py`)
 - WCAG: 1.4.4 · 1.4.10
@@ -87,8 +88,8 @@ Both models baked into the Modal container at build time via `setup_model.py` so
 - Finds forms, checks label associations, submits with invalid data, checks for error messages
 - Uses Molmo2 to visually confirm error messages are present and associated with fields
 
-### 6. Page Structure & Semantics (`page_structure.py`) ← NEW
-- WCAG: 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 3.1.1 · 4.1.2
+### 6. Page Structure & Semantics (`page_structure.py`)
+- WCAG: 1.1.1 · 1.3.1 · 2.4.2 · 2.4.4 · 2.5.5 · 3.1.1 · 4.1.2
 - **No GPU required** — single JS evaluation, ~100ms
 - Checks:
   - `3.1.1` — missing lang attribute on `<html>`
@@ -96,6 +97,7 @@ Both models baked into the Modal container at build time via `setup_model.py` so
   - `1.1.1` — missing alt, empty alt on meaningful images, filename-style alt text
   - `1.3.1` — no h1, multiple h1s, skipped heading levels
   - `2.4.4` — vague link text ("click here", "read more", etc.)
+  - `2.5.5` — interactive elements under 24×24px (WCAG 2.2 AA threshold; 2.1 AAA is 44×44px); reports actual pixel dimensions
   - `4.1.2` — unnamed ARIA roles, bad role=list children, focusable elements inside aria-hidden
 - Returns issues sorted by severity (critical → major → minor)
 - ResultsDashboard renders each issue as a card with criterion badge, severity color, description, examples, fix
@@ -311,7 +313,7 @@ All five sites confirmed the tool catches real failures across all test categori
 | Principle | Criteria Covered |
 |---|---|
 | Perceivable | 1.1.1 · 1.3.1 · 1.4.1 · 1.4.3 · 1.4.4 · 1.4.10 |
-| Operable | 2.1.1 · 2.1.2 · 2.4.2 · 2.4.3 · 2.4.4 · 2.4.7 |
+| Operable | 2.1.1 · 2.1.2 · 2.4.2 · 2.4.3 · 2.4.4 · 2.4.7 · 2.5.5 |
 | Understandable | 3.1.1 · 3.3.1 · 3.3.2 · 3.3.3 |
 | Robust | 4.1.2 |
 

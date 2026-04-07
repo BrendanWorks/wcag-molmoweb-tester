@@ -27,12 +27,24 @@ interface FocusStep {
   };
 }
 
+interface StructureIssue {
+  criterion: string;
+  severity: string;
+  description: string;
+  examples?: string[];
+  fix?: string;
+}
+
 interface TestDetails {
   molmo2_used?: boolean;
   molmo2_warnings?: number;
   steps?: FocusStep[];
   tabs_tested?: number;
   failure_count?: number;
+  issues?: StructureIssue[];
+  critical_count?: number;
+  major_count?: number;
+  minor_count?: number;
   [key: string]: unknown;
 }
 
@@ -407,6 +419,73 @@ export default function ResultsDashboard({
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Page Structure issue breakdown */}
+                {ts.test_id === "page_structure" && ts.details?.issues && ts.details.issues.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                      Issues Found
+                    </p>
+                    <div className="flex items-center gap-3 flex-wrap mb-2 text-xs">
+                      {ts.details.critical_count !== undefined && ts.details.critical_count > 0 && (
+                        <span className="text-red-600 font-medium">{ts.details.critical_count} critical</span>
+                      )}
+                      {ts.details.major_count !== undefined && ts.details.major_count > 0 && (
+                        <span className="text-orange-600 font-medium">{ts.details.major_count} major</span>
+                      )}
+                      {ts.details.minor_count !== undefined && ts.details.minor_count > 0 && (
+                        <span className="text-yellow-600 font-medium">{ts.details.minor_count} minor</span>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      {ts.details.issues.map((issue, idx) => (
+                        <div
+                          key={idx}
+                          className={`rounded-lg border p-3 text-xs ${
+                            issue.severity === "critical"
+                              ? "bg-red-50 border-red-200"
+                              : issue.severity === "major"
+                              ? "bg-orange-50 border-orange-200"
+                              : "bg-yellow-50 border-yellow-200"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-mono bg-white border border-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
+                              {issue.criterion}
+                            </span>
+                            <span className={`font-semibold capitalize ${
+                              issue.severity === "critical"
+                                ? "text-red-700"
+                                : issue.severity === "major"
+                                ? "text-orange-700"
+                                : "text-yellow-700"
+                            }`}>
+                              {issue.severity}
+                            </span>
+                          </div>
+                          <p className="text-slate-800 font-medium">{issue.description}</p>
+                          {issue.examples && issue.examples.length > 0 && (
+                            <ul className="mt-1.5 space-y-0.5 text-slate-600">
+                              {issue.examples.slice(0, 3).map((ex, i) => (
+                                <li key={i} className="font-mono truncate max-w-full">
+                                  · {ex}
+                                </li>
+                              ))}
+                              {issue.examples.length > 3 && (
+                                <li className="text-slate-400 italic">
+                                  + {issue.examples.length - 3} more
+                                </li>
+                              )}
+                            </ul>
+                          )}
+                          {issue.fix && (
+                            <p className="mt-1.5 text-slate-500 italic">Fix: {issue.fix}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

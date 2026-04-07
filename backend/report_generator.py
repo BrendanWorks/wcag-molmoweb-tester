@@ -30,6 +30,7 @@ TEST_LABELS = {
     "color_blindness": "Color Blindness Simulation",
     "focus_indicator": "Focus Visibility",
     "form_errors": "Form Error Handling",
+    "page_structure": "Page Structure & Semantics",
 }
 
 

@@ -44,6 +44,13 @@ export const TEST_OPTIONS: TestOption[] = [
     wcag: ["3.3.1", "3.3.2", "3.3.3"],
     phase: 2,
   },
+  {
+    id: "page_structure",
+    label: "Page Structure & Semantics",
+    description: "Checks alt text on images, heading hierarchy, page title, vague link text, lang attribute, and ARIA misuse.",
+    wcag: ["1.1.1", "1.3.1", "2.4.2", "2.4.4", "3.1.1", "4.1.2"],
+    phase: 1,
+  },
 ];
 
 const PHASE_LABEL: Record<number, string> = {

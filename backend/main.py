@@ -24,6 +24,7 @@ from tests import (
     ColorBlindnessTest,
     FocusIndicatorTest,
     FormErrorTest,
+    PageStructureTest,
 )
 from report_generator import generate_report
 
@@ -62,6 +63,7 @@ TEST_MAP = {
     "color_blindness": ColorBlindnessTest,
     "focus_indicator": FocusIndicatorTest,
     "form_errors": FormErrorTest,
+    "page_structure": PageStructureTest,
 }
 
 # ── Schema ────────────────────────────────────────────────────────────────────

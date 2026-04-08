@@ -11,14 +11,22 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="h-full">
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900 antialiased">
-        <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
+      <body className="min-h-full flex flex-col antialiased" style={{ background: "var(--bg)", color: "var(--text)" }}>
+        <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}
+          className="px-6 py-4 flex items-center gap-3">
+          <div
+            className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm"
+            style={{ background: "var(--lime)", color: "#0A0A0B" }}
+          >
             PC
           </div>
           <div>
-            <h1 className="font-semibold text-slate-900 leading-none">PointCheck</h1>
-            <p className="text-xs text-slate-500 mt-0.5">WCAG 2.1 Level AA — Powered by OLMo2 &amp; Molmo2</p>
+            <h1 className="font-semibold leading-none tracking-tight" style={{ color: "var(--text)" }}>
+              PointCheck
+            </h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--muted)" }}>
+              WCAG 2.1 Level AA — Powered by OLMo2 &amp; Molmo2
+            </p>
           </div>
         </header>
         <main className="flex-1 flex flex-col">{children}</main>

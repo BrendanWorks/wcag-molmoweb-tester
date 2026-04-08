@@ -105,27 +105,39 @@ export default function AuditForm() {
     setUrl("");
   }
 
+  const inputStyle = {
+    background: "var(--surface2)",
+    border: "1px solid var(--border)",
+    color: "var(--text)",
+    outline: "none",
+  };
+
   return (
     <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-10">
       {phase === "form" && (
         <form onSubmit={handleSubmit} className="space-y-8">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Run a PointCheck</h2>
-            <p className="text-slate-500 mt-1 text-sm">
+            <h2 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
+              Run a PointCheck
+            </h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
               Enter a URL and choose which WCAG 2.1 Level AA tests to run. Powered by
               Allen AI&apos;s OLMo2 and Molmo2 models.
             </p>
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            <div
+              className="rounded-lg p-3 text-sm"
+              style={{ background: "rgba(255,51,102,0.1)", border: "1px solid rgba(255,51,102,0.3)", color: "var(--crimson)" }}
+            >
               {error}
             </div>
           )}
 
           <div className="space-y-2">
-            <label htmlFor="url" className="block text-sm font-medium text-slate-700">
-              Website URL <span className="text-red-500" aria-hidden="true">*</span>
+            <label htmlFor="url" className="block text-sm font-medium" style={{ color: "var(--text)" }}>
+              Website URL <span style={{ color: "var(--crimson)" }} aria-hidden="true">*</span>
             </label>
             <input
               id="url"
@@ -133,16 +145,20 @@ export default function AuditForm() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
-              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm
-                         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                         placeholder:text-slate-400"
+              className="w-full rounded-lg px-4 py-2.5 text-sm transition-colors"
+              style={{
+                ...inputStyle,
+                borderColor: "var(--border)",
+              }}
+              onFocus={(e) => (e.target.style.borderColor = "var(--lime)")}
+              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
             />
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="task" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="task" className="block text-sm font-medium" style={{ color: "var(--text)" }}>
               Task Description
-              <span className="ml-1 text-xs font-normal text-slate-500">
+              <span className="ml-1 text-xs font-normal" style={{ color: "var(--muted)" }}>
                 — what a real user would try to accomplish
               </span>
             </label>
@@ -151,8 +167,10 @@ export default function AuditForm() {
               type="text"
               value={task}
               onChange={(e) => setTask(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm
-                         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full rounded-lg px-4 py-2.5 text-sm transition-colors"
+              style={{ ...inputStyle }}
+              onFocus={(e) => (e.target.style.borderColor = "var(--lime)")}
+              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
             />
           </div>
 
@@ -164,19 +182,19 @@ export default function AuditForm() {
               type="checkbox"
               checked={useQuantization}
               onChange={(e) => setUseQuantization(e.target.checked)}
-              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+              className="h-4 w-4 rounded"
+              style={{ accentColor: "var(--lime)" }}
             />
-            <label htmlFor="quantize" className="text-sm text-slate-600">
+            <label htmlFor="quantize" className="text-sm" style={{ color: "var(--muted)" }}>
               Use 4-bit quantization{" "}
-              <span className="text-slate-400">(less VRAM, slower inference)</span>
+              <span style={{ color: "var(--border)" }}>(less VRAM, slower inference)</span>
             </label>
           </div>
 
           <button
             type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-2.5
-                       rounded-lg text-sm transition-colors cursor-pointer
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="font-semibold px-6 py-2.5 rounded-lg text-sm transition-opacity hover:opacity-90 cursor-pointer"
+            style={{ background: "var(--lime)", color: "#0A0A0B" }}
           >
             Run {selectedTests.length} Test{selectedTests.length !== 1 ? "s" : ""}
           </button>
@@ -190,17 +208,20 @@ export default function AuditForm() {
       {phase === "done" && (
         <div className="space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">
+            <div
+              className="rounded-lg p-4 text-sm"
+              style={{ background: "rgba(255,51,102,0.1)", border: "1px solid rgba(255,51,102,0.3)", color: "var(--crimson)" }}
+            >
               <strong>Error:</strong> {error}
             </div>
           )}
           {report && <ResultsDashboard report={report} url={submittedUrl} />}
           <button
             onClick={handleReset}
-            className="text-sm text-blue-600 hover:text-blue-700 underline
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+            className="text-sm underline transition-opacity hover:opacity-70"
+            style={{ color: "var(--lime)" }}
           >
-            Run another audit
+            Run another PointCheck
           </button>
         </div>
       )}

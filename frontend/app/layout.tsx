@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,6 +29,16 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="h-full">
+      <Script
+        src="https://www.googletagmanager.com/gtag/js?id=G-HZLKPK3KK2"
+        strategy="afterInteractive"
+      />
+      <Script id="ga4-init" strategy="afterInteractive">{`
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-HZLKPK3KK2');
+      `}</Script>
       <body
         className="min-h-full flex flex-col antialiased"
         style={{ background: "var(--bg)", color: "var(--text)" }}

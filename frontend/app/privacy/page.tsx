@@ -44,12 +44,14 @@ export default function PrivacyPage() {
 
         <section className="space-y-2">
           <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
-            No tracking
+            Analytics
           </h3>
           <p>
-            There are no analytics scripts, no tracking pixels, no cookies of any
-            kind. PointCheck does not use Google Analytics, Mixpanel, or any
-            third-party analytics service.
+            PointCheck uses Google Analytics (GA4) to collect basic, anonymous
+            usage data — page views and session counts. No personally identifiable
+            information is collected. No user behaviour inside a test run is
+            tracked. You can opt out using any standard browser extension that
+            blocks Google Analytics.
           </p>
         </section>
 

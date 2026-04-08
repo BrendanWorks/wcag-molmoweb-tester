@@ -22,27 +22,46 @@ export default function AuditForm() {
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
   const [submittedUrl, setSubmittedUrl] = useState("");
+  const [showColdStart, setShowColdStart] = useState(false);
+
   const wsRef = useRef<WebSocket | null>(null);
+  const coldStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Keep a snapshot of settings for retry
+  const lastSettingsRef = useRef({ task, selectedTests, useQuantization });
 
   useEffect(() => {
-    return () => { wsRef.current?.close(); };
+    return () => {
+      wsRef.current?.close();
+      if (coldStartTimerRef.current) clearTimeout(coldStartTimerRef.current);
+    };
   }, []);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const urlValue = url.trim();
-    if (!urlValue || selectedTests.length === 0) {
-      setError(urlValue ? "Please select at least one test." : "Please enter a URL.");
-      return;
-    }
+  // ── Core audit runner (called by submit and retry) ──────────────────────────
+  async function runAudit(urlValue: string, settings: {
+    task: string;
+    selectedTests: string[];
+    useQuantization: boolean;
+  }) {
+    wsRef.current?.close();
+    if (coldStartTimerRef.current) clearTimeout(coldStartTimerRef.current);
 
     setSubmittedUrl(urlValue);
     setError("");
     setEvents([]);
     setReport(null);
+    setShowColdStart(false);
     setPhase("running");
+
+    // Show cold-start notice if no events arrive within 8 s
+    coldStartTimerRef.current = setTimeout(() => setShowColdStart(true), 8000);
+
+    function dismissColdStart() {
+      if (coldStartTimerRef.current) {
+        clearTimeout(coldStartTimerRef.current);
+        coldStartTimerRef.current = null;
+      }
+      setShowColdStart(false);
+    }
 
     try {
       const res = await fetch(`${API_BASE}/api/run`, {
@@ -50,21 +69,24 @@ export default function AuditForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: urlValue,
-          tests: selectedTests,
-          task: task.trim() || "Navigate and use the main features of this website",
-          use_quantization: useQuantization,
+          tests: settings.selectedTests,
+          task: settings.task.trim() || "Navigate and use the main features of this website",
+          use_quantization: settings.useQuantization,
         }),
       });
+
       if (!res.ok) {
+        dismissColdStart();
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { detail?: string }).detail ?? `Server error ${res.status}`);
       }
-      const { run_id } = await res.json() as { run_id: string };
 
+      const { run_id } = (await res.json()) as { run_id: string };
       const ws = new WebSocket(`${WS_BASE}/ws/${run_id}`);
       wsRef.current = ws;
 
       ws.onmessage = (ev) => {
+        dismissColdStart(); // first event = models loaded
         const msg = JSON.parse(ev.data as string) as Record<string, unknown>;
         setEvents((prev) => [...prev, msg]);
         if (msg.type === "done") {
@@ -80,29 +102,62 @@ export default function AuditForm() {
       };
 
       ws.onerror = () => {
+        dismissColdStart();
         setError("WebSocket connection failed. Is the backend running on port 8000?");
         setPhase("done");
       };
 
       ws.onclose = (ev) => {
-        if (!ev.wasClean && phase === "running") {
-          setError("Connection to backend dropped unexpectedly.");
-          setPhase("done");
+        dismissColdStart();
+        // Only flag as unexpected if we were still waiting for results
+        if (!ev.wasClean) {
+          setPhase((current) => {
+            if (current === "running") {
+              setError("Connection to the backend dropped unexpectedly. Please try again.");
+              return "done";
+            }
+            return current;
+          });
         }
       };
     } catch (err: unknown) {
+      dismissColdStart();
       setError(err instanceof Error ? err.message : String(err));
       setPhase("done");
     }
   }
 
+  // ── Form submit ──────────────────────────────────────────────────────────────
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const urlValue = url.trim();
+    if (!urlValue || selectedTests.length === 0) {
+      setError(urlValue ? "Please select at least one test." : "Please enter a URL.");
+      return;
+    }
+
+    const settings = { task, selectedTests, useQuantization };
+    lastSettingsRef.current = settings;
+    runAudit(urlValue, settings);
+  }
+
+  // ── Retry (same URL + settings) ──────────────────────────────────────────────
+  function handleRetry() {
+    runAudit(submittedUrl, lastSettingsRef.current);
+  }
+
+  // ── Reset to form ────────────────────────────────────────────────────────────
   function handleReset() {
     wsRef.current?.close();
+    if (coldStartTimerRef.current) clearTimeout(coldStartTimerRef.current);
     setPhase("form");
     setEvents([]);
     setReport(null);
     setError("");
     setUrl("");
+    setShowColdStart(false);
   }
 
   const inputStyle = {
@@ -114,6 +169,8 @@ export default function AuditForm() {
 
   return (
     <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-10">
+
+      {/* ── Form ── */}
       {phase === "form" && (
         <form onSubmit={handleSubmit} className="space-y-8">
           <div>
@@ -129,7 +186,11 @@ export default function AuditForm() {
           {error && (
             <div
               className="rounded-lg p-3 text-sm"
-              style={{ background: "rgba(255,51,102,0.1)", border: "1px solid rgba(255,51,102,0.3)", color: "var(--crimson)" }}
+              style={{
+                background: "rgba(255,51,102,0.1)",
+                border: "1px solid rgba(255,51,102,0.3)",
+                color: "var(--crimson)",
+              }}
             >
               {error}
             </div>
@@ -146,10 +207,7 @@ export default function AuditForm() {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
               className="w-full rounded-lg px-4 py-2.5 text-sm transition-colors"
-              style={{
-                ...inputStyle,
-                borderColor: "var(--border)",
-              }}
+              style={{ ...inputStyle, borderColor: "var(--border)" }}
               onFocus={(e) => (e.target.style.borderColor = "var(--lime)")}
               onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
             />
@@ -201,21 +259,74 @@ export default function AuditForm() {
         </form>
       )}
 
+      {/* ── Running ── */}
       {phase === "running" && (
-        <ProgressDisplay events={events} onCancel={handleReset} />
+        <ProgressDisplay
+          events={events}
+          showColdStart={showColdStart}
+          onCancel={handleReset}
+        />
       )}
 
+      {/* ── Done ── */}
       {phase === "done" && (
         <div className="space-y-6">
-          {error && (
+          {error && !report && (
+            /* Fatal error — no results to show */
             <div
-              className="rounded-lg p-4 text-sm"
-              style={{ background: "rgba(255,51,102,0.1)", border: "1px solid rgba(255,51,102,0.3)", color: "var(--crimson)" }}
+              className="rounded-xl p-6 space-y-4"
+              style={{
+                background: "rgba(255,51,102,0.07)",
+                border: "1px solid rgba(255,51,102,0.25)",
+              }}
             >
-              <strong>Error:</strong> {error}
+              <div>
+                <p className="text-sm font-semibold mb-1" style={{ color: "var(--crimson)" }}>
+                  Something went wrong
+                </p>
+                <p className="text-sm" style={{ color: "var(--muted)" }}>
+                  {error}
+                </p>
+              </div>
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  onClick={handleRetry}
+                  className="text-sm font-semibold px-4 py-2 rounded-lg transition-opacity hover:opacity-90 cursor-pointer"
+                  style={{ background: "var(--lime)", color: "#0A0A0B" }}
+                >
+                  Try again
+                </button>
+                <button
+                  onClick={handleReset}
+                  className="text-sm px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                  style={{
+                    background: "var(--surface2)",
+                    border: "1px solid var(--border)",
+                    color: "var(--muted)",
+                  }}
+                >
+                  Change settings
+                </button>
+              </div>
             </div>
           )}
+
+          {error && report && (
+            /* Non-fatal error alongside a partial report */
+            <div
+              className="rounded-lg p-3 text-sm"
+              style={{
+                background: "rgba(255,51,102,0.1)",
+                border: "1px solid rgba(255,51,102,0.3)",
+                color: "var(--crimson)",
+              }}
+            >
+              <strong>Note:</strong> {error}
+            </div>
+          )}
+
           {report && <ResultsDashboard report={report} url={submittedUrl} />}
+
           <button
             onClick={handleReset}
             className="text-sm underline transition-opacity hover:opacity-70"

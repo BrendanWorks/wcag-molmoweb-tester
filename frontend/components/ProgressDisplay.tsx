@@ -15,6 +15,7 @@ interface Event {
 
 interface Props {
   events: object[];
+  showColdStart: boolean;
   onCancel: () => void;
 }
 
@@ -23,7 +24,13 @@ const TEST_NAME: Record<string, string> = Object.fromEntries(
 );
 
 function StatusDot({ result }: { result?: string }) {
-  if (!result) return <span className="inline-block w-2 h-2 rounded-full" style={{ background: "var(--border)" }} />;
+  if (!result)
+    return (
+      <span
+        className="inline-block w-2 h-2 rounded-full"
+        style={{ background: "var(--border)" }}
+      />
+    );
   const colors: Record<string, string> = {
     pass: "var(--lime)",
     fail: "var(--crimson)",
@@ -38,7 +45,7 @@ function StatusDot({ result }: { result?: string }) {
   );
 }
 
-export default function ProgressDisplay({ events, onCancel }: Props) {
+export default function ProgressDisplay({ events, showColdStart, onCancel }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const typed = events as Event[];
 
@@ -66,28 +73,45 @@ export default function ProgressDisplay({ events, onCancel }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* ── Header row ── */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
+          <h2
+            className="text-xl font-bold tracking-tight"
+            style={{ color: "var(--text)" }}
+          >
             Running Tests…
           </h2>
           <button
             onClick={onCancel}
             className="text-sm transition-colors rounded px-2 py-1"
             style={{ color: "var(--muted)" }}
-            onMouseEnter={(e) => ((e.target as HTMLElement).style.color = "var(--crimson)")}
-            onMouseLeave={(e) => ((e.target as HTMLElement).style.color = "var(--muted)")}
+            onMouseEnter={(e) =>
+              ((e.target as HTMLElement).style.color = "var(--crimson)")
+            }
+            onMouseLeave={(e) =>
+              ((e.target as HTMLElement).style.color = "var(--muted)")
+            }
           >
             Cancel
           </button>
         </div>
+
         {totalTests > 0 && (
           <div className="mt-2">
-            <div className="flex justify-between text-xs mb-1" style={{ color: "var(--muted)" }}>
-              <span>{completedTests} / {totalTests} tests complete</span>
+            <div
+              className="flex justify-between text-xs mb-1"
+              style={{ color: "var(--muted)" }}
+            >
+              <span>
+                {completedTests} / {totalTests} tests complete
+              </span>
               <span style={{ color: "var(--lime)" }}>{Math.round(progress)}%</span>
             </div>
-            <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface2)" }}>
+            <div
+              className="w-full h-1.5 rounded-full overflow-hidden"
+              style={{ background: "var(--surface2)" }}
+            >
               <div
                 className="h-1.5 rounded-full transition-all duration-500"
                 style={{ width: `${progress}%`, background: "var(--lime)" }}
@@ -97,7 +121,25 @@ export default function ProgressDisplay({ events, onCancel }: Props) {
         )}
       </div>
 
-      {/* Per-test status pills */}
+      {/* ── Cold-start notice ── */}
+      {showColdStart && (
+        <div
+          className="flex items-start gap-3 rounded-lg px-4 py-3 text-sm"
+          style={{
+            background: "rgba(255,184,0,0.08)",
+            border: "1px solid rgba(255,184,0,0.25)",
+            color: "var(--amber)",
+          }}
+        >
+          <span className="mt-0.5 shrink-0">⏳</span>
+          <span>
+            The backend is loading its models — this takes up to 30 seconds on the
+            first run. Hang tight.
+          </span>
+        </div>
+      )}
+
+      {/* ── Per-test status pills ── */}
       {Object.keys(testResults).length > 0 && (
         <div className="flex flex-wrap gap-2">
           {Object.entries(testResults).map(([id, result]) => (
@@ -123,14 +165,17 @@ export default function ProgressDisplay({ events, onCancel }: Props) {
                 color: "var(--lime)",
               }}
             >
-              <span className="inline-block w-2 h-2 rounded-full" style={{ background: "var(--lime)" }} />
+              <span
+                className="inline-block w-2 h-2 rounded-full"
+                style={{ background: "var(--lime)" }}
+              />
               {TEST_NAME[currentTest] ?? currentTest}
             </span>
           )}
         </div>
       )}
 
-      {/* Event log */}
+      {/* ── Event log ── */}
       <div
         className="rounded-xl p-4 h-80 overflow-y-auto font-mono text-xs space-y-1"
         style={{ background: "#0D0D0E", border: "1px solid var(--border)" }}
@@ -139,14 +184,16 @@ export default function ProgressDisplay({ events, onCancel }: Props) {
           if (ev.type === "progress") {
             return (
               <p key={i} style={{ color: "var(--muted)" }}>
-                <span style={{ color: "var(--border)" }}>  › </span>{ev.message}
+                <span style={{ color: "var(--border)" }}>  › </span>
+                {ev.message}
               </p>
             );
           }
           if (ev.type === "status") {
             return (
               <p key={i} style={{ color: "var(--lime)" }}>
-                <span style={{ color: "rgba(204,255,0,0.4)" }}>  ● </span>{ev.message}
+                <span style={{ color: "rgba(204,255,0,0.4)" }}>  ● </span>
+                {ev.message}
               </p>
             );
           }
@@ -166,11 +213,18 @@ export default function ProgressDisplay({ events, onCancel }: Props) {
           }
           if (ev.type === "result") {
             const r = ev.data?.result as string;
-            const color = r === "pass" ? "var(--lime)" : r === "fail" ? "var(--crimson)" : "var(--amber)";
+            const color =
+              r === "pass"
+                ? "var(--lime)"
+                : r === "fail"
+                ? "var(--crimson)"
+                : "var(--amber)";
             return (
               <p key={i} style={{ color }}>
                 {r === "pass" ? "✓" : "✗"} {r?.toUpperCase()}
-                {ev.data?.failure_reason ? ` — ${String(ev.data.failure_reason).slice(0, 120)}` : ""}
+                {ev.data?.failure_reason
+                  ? ` — ${String(ev.data.failure_reason).slice(0, 120)}`
+                  : ""}
               </p>
             );
           }

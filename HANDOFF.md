@@ -320,16 +320,4 @@ All five sites confirmed the tool catches real failures across all test categori
 
 **~85–90% of WCAG 2.1 Level AA** success criteria covered programmatically.
 
----
-
-## Job Application Assets
-
-| File | Purpose |
-|---|---|
-| `README.md` | GitHub README — architecture, models, setup, deployment, coverage table |
-| `COVER_LETTER.md` | Cover letter for AllenAI Senior TPM, AI Platform role |
-| `HANDOFF.md` | This file |
-
-The cover letter's "Technical Fluency" bullet specifically references OLMo2 + Molmo2, the live URL, 4-bit quant, ConsecutiveNewlineSuppressor, ROPE patch, and the 85–90% WCAG coverage figure.
-
-The job application form answer ("Tell a story about the last thing you learned in AI") is in the conversation history — covers Molmo2 as a spatial verifier (not generator), pixel coordinate output, the binary visual confirmation insight, and the two-model coexistence engineering.
+ form answer ("Tell a story about the last thing you learned in AI") is in the conversation history — covers Molmo2 as a spatial verifier (not generator), pixel coordinate output, the binary visual confirmation insight, and the two-model coexistence engineering.

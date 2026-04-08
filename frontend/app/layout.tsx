@@ -70,7 +70,7 @@ export default function RootLayout({
           <nav className="flex items-center gap-5 text-sm">
             <a href="/about" className="nav-link-muted">About</a>
             <a
-              href="https://github.com/BrendanWorks/wcag-molmoweb-tester"
+              href="https://github.com/BrendanWorks/PointCheck"
               target="_blank"
               rel="noopener noreferrer"
               className="nav-link-lime"
@@ -109,7 +109,7 @@ export default function RootLayout({
               <a href="/privacy" className="footer-link">Privacy</a>
               <a href="/terms" className="footer-link">Terms</a>
               <a
-                href="https://github.com/BrendanWorks/wcag-molmoweb-tester"
+                href="https://github.com/BrendanWorks/PointCheck"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="footer-link"

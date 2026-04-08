@@ -76,7 +76,7 @@ export default function AboutPage() {
           style={{ borderTop: "1px solid var(--border)" }}
         >
           <a
-            href="https://github.com/BrendanWorks/wcag-molmoweb-tester"
+            href="https://github.com/BrendanWorks/PointCheck"
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: "var(--lime)" }}

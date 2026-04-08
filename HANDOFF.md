@@ -4,7 +4,7 @@
 ## What This Is
 PointCheck is a fully deployed WCAG 2.1 Level AA accessibility testing tool built as a portfolio piece for an Allen AI job application. Users paste a URL, select tests, and receive a detailed accessibility report with live streaming progress, Molmo2 visual confirmation, and an OLMo2-written executive summary.
 
-- **GitHub**: https://github.com/BrendanWorks/wcag-molmoweb-tester
+- **GitHub**: https://github.com/BrendanWorks/PointCheck
 - **Live frontend**: https://pointcheck.org
 - **Backend endpoint**: https://brendanworks--wcag-tester-web.modal.run
 - **Stack**: Next.js 16 (Vercel) → FastAPI + WebSocket + Playwright + OLMo2-7B + Molmo2-4B (Modal A10G)

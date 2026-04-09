@@ -64,11 +64,15 @@ export default function AboutPage() {
         </p>
 
         <p>
-          Read the full technical writeup{" "}
-          <span style={{ color: "var(--border)" }}>
-            (Substack article — coming soon)
-          </span>
-          .
+          Read the full technical writeup on{" "}
+          <a
+            href="https://open.substack.com/pub/brendanworks/p/your-site-passed-the-audit-its-still?r=bvfqv&utm_campaign=post&utm_medium=web"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--lime)" }}
+          >
+            Substack →
+          </a>
         </p>
 
         <div

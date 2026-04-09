@@ -32,7 +32,7 @@ The tool runs up to six accessibility tests against any public URL using a headl
 │  Next.js 16 (Vercel)            │        │  FastAPI + Playwright (Modal A10G)   │
 │                                 │        │                                      │
 │  • URL input + test selector    │◄──WS──►│  • Runs 6 WCAG tests                │
-│  • Live progress feed           │        │  • OLMo-2-7B  → narrative            │
+│  • Live progress feed           │        │  • OLMo-3-7B  → narrative            │
 │  • Results dashboard            │        │  • Molmo2-4B  → visual pointer       │
 │  • JSON / CSV export            │        │  • Streams results over WebSocket    │
 └─────────────────────────────────┘        └──────────────────────────────────────┘
@@ -42,7 +42,7 @@ The tool runs up to six accessibility tests against any public URL using a headl
 
 | Model | Role | Size |
 |---|---|---|
-| [allenai/OLMo-2-1124-7B-Instruct](https://huggingface.co/allenai/OLMo-2-1124-7B-Instruct) | Writes the plain-English executive summary after all tests complete | ~14 GB bfloat16 |
+| [allenai/Olmo-3-7B-Instruct](https://huggingface.co/allenai/Olmo-3-7B-Instruct) | Writes the plain-English executive summary after all tests complete | ~14 GB bfloat16 |
 | [allenai/Molmo2-4B](https://huggingface.co/allenai/Molmo2-4B) | Vision-language model — given a screenshot, outputs pixel coordinates of the focused element to confirm the focus ring is **visually** present (not just technically in the DOM) | ~2 GB 4-bit NF4 |
 
 Molmo2's output format is `<point x="42.3" y="67.1">`. If it cannot locate the focused element in the screenshot, the element passes the CSS check but fails visual confirmation — a class of failure that DOM inspection alone cannot catch.
@@ -53,7 +53,7 @@ Molmo2's output format is `<point x="42.3" y="67.1">`. If it cannot locate the f
 
 - **WebSocket streaming** — test events (`test_start`, `result`, `test_complete`, `done`) push to the browser in real time
 - **Base64 screenshots** — Modal is serverless; screenshots are embedded directly in result events rather than saved to disk
-- **4-bit quantization** — Molmo2 uses `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4")` to fit alongside OLMo2 on a single A10G (24 GB VRAM)
+- **4-bit quantization** — Molmo2 uses `BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4")` to fit alongside OLMo3 on a single A10G (24 GB VRAM)
 - **DOM-tree contrast walk** — `getEffectiveBg()` composites alpha layers up the DOM tree to find the actual rendered background, avoiding false passes on transparent elements
 - **Static JS keyboard scan** — before tab traversal, scans the DOM for `javascript:` hrefs, `onclick` on non-interactive elements, missing skip navigation, and **positive `tabindex` values** that override natural tab order (2.4.3)
 - **Touch target size** — flags interactive elements under 24×24px (WCAG 2.2 AA 2.5.8; WCAG 2.1 AAA 2.5.5 requires 44×44px)
@@ -71,7 +71,7 @@ Molmo2's output format is `<point x="42.3" y="67.1">`. If it cannot locate the f
 ├── modal_app.py              # Modal deployment (image build + ASGI wrapper)
 ├── backend/
 │   ├── main.py               # FastAPI app, WebSocket run handler
-│   ├── wcag_agent.py         # OLMo2 (narrative) + Molmo2 (visual pointer)
+│   ├── wcag_agent.py         # OLMo3 (narrative) + Molmo2 (visual pointer)
 │   ├── report_generator.py   # Aggregates results → JSON/CSV report
 │   ├── requirements.txt
 │   └── tests/
@@ -105,7 +105,7 @@ playwright install chromium
 uvicorn main:app --reload --port 8000
 ```
 
-The first run downloads OLMo2 (~14 GB) and Molmo2 (~4 GB). A CUDA GPU is strongly recommended — CPU inference is very slow.
+The first run downloads OLMo3 (~14 GB) and Molmo2 (~4 GB). A CUDA GPU is strongly recommended — CPU inference is very slow.
 
 ### Frontend
 
@@ -198,7 +198,7 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 
 ## Built With
 
-- [Allen AI OLMo2](https://allenai.org/olmo) — open-source LLM for narrative generation
+- [Allen AI OLMo3](https://allenai.org/olmo) — open-source LLM for narrative generation
 - [Allen AI Molmo2](https://allenai.org/molmo) — open-source VLM for visual grounding
 - [Playwright](https://playwright.dev) — headless browser automation
 - [FastAPI](https://fastapi.tiangolo.com) — async Python API

@@ -55,7 +55,7 @@ export default function AboutPage() {
           The rest of the test suite covers keyboard navigation, 200% zoom
           reflow, color-blindness simulation, form error handling, and a broad
           page structure check. Results are narrated in plain English by Allen
-          AI&apos;s OLMo2 language model.
+          AI&apos;s OLMo3 language model.
         </p>
 
         <p>

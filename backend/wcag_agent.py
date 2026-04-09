@@ -2,7 +2,7 @@
 """
 WCAG Testing Agent — two-model architecture
 
-  WCAGAgent      allenai/OLMo-2-1124-7B-Instruct
+  WCAGAgent      allenai/Olmo-3-7B-Instruct
                  Text-only. Called once after all tests complete to
                  produce the executive summary narrative.
 
@@ -114,7 +114,7 @@ class Molmo2Pointer:
             "device_map": "auto" if self.device == "cuda" else None,
             "trust_remote_code": True,
         }
-        # Always quantize on CUDA — Molmo2 shares VRAM with OLMo2-7B (~14GB).
+        # Always quantize on CUDA — Molmo2 shares VRAM with OLMo3-7B (~14GB).
         # 4-bit drops Molmo2 from ~8GB to ~2GB; pointing quality is unaffected.
         if self.device == "cuda":
             from transformers import BitsAndBytesConfig
@@ -248,16 +248,16 @@ class Molmo2Pointer:
         return None
 
 
-# ── OLMo2 narrative agent ─────────────────────────────────────────────────────
+# ── OLMo3 narrative agent ─────────────────────────────────────────────────────
 
 class WCAGAgent:
-    MODEL_NAME = "allenai/OLMo-2-1124-7B-Instruct"
+    MODEL_NAME = "allenai/Olmo-3-7B-Instruct"
 
     def __init__(self, model_name: str = MODEL_NAME, use_quantization: bool = False):
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        print(f"[OLMo2] Loading {model_name} on {self.device}...")
+        print(f"[OLMo3] Loading {model_name} on {self.device}...")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         model_kwargs: dict = {
@@ -277,7 +277,7 @@ class WCAGAgent:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
-        print("[OLMo2] Ready")
+        print("[OLMo3] Ready")
 
     async def generate_narrative(self, results: list, url: str) -> str:
         loop = asyncio.get_event_loop()
@@ -327,11 +327,11 @@ class WCAGAgent:
 
             new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
             narrative = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
-            print(f"[OLMo2] Narrative: {len(narrative)} chars")
+            print(f"[OLMo3] Narrative: {len(narrative)} chars")
             return narrative
 
         except Exception as e:
-            print(f"[OLMo2] Narrative error: {e}")
+            print(f"[OLMo3] Narrative error: {e}")
             import traceback; traceback.print_exc()
             return ""
 

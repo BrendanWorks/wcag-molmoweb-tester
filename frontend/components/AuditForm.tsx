@@ -206,7 +206,7 @@ export default function AuditForm() {
             </h2>
             <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
               Enter a URL and choose which WCAG 2.1 Level AA tests to run. Powered by
-              Allen AI&apos;s OLMo2 and Molmo2 models.
+              Allen AI&apos;s OLMo3 and Molmo2 models.
             </p>
           </div>
 

@@ -2,12 +2,12 @@
 **Last updated: 2026-04-07**
 
 ## What This Is
-PointCheck is a fully deployed WCAG 2.1 Level AA accessibility testing tool built as a portfolio piece for an Allen AI job application. Users paste a URL, select tests, and receive a detailed accessibility report with live streaming progress, Molmo2 visual confirmation, and an OLMo2-written executive summary.
+PointCheck is a fully deployed WCAG 2.1 Level AA accessibility testing tool built as a portfolio piece for an Allen AI job application. Users paste a URL, select tests, and receive a detailed accessibility report with live streaming progress, Molmo2 visual confirmation, and an OLMo3-written executive summary.
 
 - **GitHub**: https://github.com/BrendanWorks/PointCheck
 - **Live frontend**: https://pointcheck.org
 - **Backend endpoint**: https://brendanworks--wcag-tester-web.modal.run
-- **Stack**: Next.js 16 (Vercel) → FastAPI + WebSocket + Playwright + OLMo2-7B + Molmo2-4B (Modal A10G)
+- **Stack**: Next.js 16 (Vercel) → FastAPI + WebSocket + Playwright + OLMo3-7B + Molmo2-4B (Modal A10G)
 
 ---
 
@@ -18,7 +18,7 @@ PointCheck is a fully deployed WCAG 2.1 Level AA accessibility testing tool buil
 │  Next.js 16 (Vercel)            │        │  FastAPI + Playwright (Modal A10G)   │
 │                                 │        │                                      │
 │  • URL input + test selector    │◄──WS──►│  • Runs 6 WCAG tests via Playwright  │
-│  • Live progress feed           │        │  • OLMo-2-7B  → executive narrative  │
+│  • Live progress feed           │        │  • OLMo-3-7B  → executive narrative  │
 │  • Results dashboard            │        │  • Molmo2-4B  → visual pointer       │
 │  • JSON / CSV export            │        │  • Streams events over WebSocket     │
 └─────────────────────────────────┘        └──────────────────────────────────────┘
@@ -27,7 +27,7 @@ PointCheck is a fully deployed WCAG 2.1 Level AA accessibility testing tool buil
 ### Models
 | Model | Role | Size on disk |
 |---|---|---|
-| `allenai/OLMo-2-1124-7B-Instruct` | Writes plain-English executive summary after all tests complete | ~14 GB bfloat16 |
+| `allenai/Olmo-3-7B-Instruct` | Writes plain-English executive summary after all tests complete | ~14 GB bfloat16 |
 | `allenai/Molmo2-4B` | Visual pointer — outputs `<point x="X" y="Y">` pixel coordinates from screenshots to confirm focus ring visibility | ~2 GB, 4-bit NF4 quantized |
 
 Both models baked into the Modal container at build time via `setup_model.py` so cold starts don't re-download weights.
@@ -40,7 +40,7 @@ Both models baked into the Modal container at build time via `setup_model.py` so
 |---|---|
 | `modal_app.py` | Modal deployment — A10G, 900s timeout, bakes models into image, applies runtime compat patches |
 | `backend/main.py` | FastAPI app, WebSocket `/ws/run` handler, TEST_MAP, `_strip_b64()` helper |
-| `backend/wcag_agent.py` | OLMo2 (WCAGAgent) + Molmo2 (Molmo2Pointer) classes, ConsecutiveNewlineSuppressor |
+| `backend/wcag_agent.py` | OLMo3 (WCAGAgent) + Molmo2 (Molmo2Pointer) classes, ConsecutiveNewlineSuppressor |
 | `backend/report_generator.py` | Aggregates per-test results → JSON report with narrative |
 | `backend/setup_model.py` | Modal image build — downloads models, applies `cache_position` file patch to Molmo2 |
 | `backend/tests/keyboard_nav.py` | 2.1.1 · 2.1.2 · 2.4.3 — Tab traversal + static JS scan |

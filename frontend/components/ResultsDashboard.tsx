@@ -219,7 +219,7 @@ export default function ResultsDashboard({
         </div>
       </div>
 
-      {/* ── OLMo2 narrative ── */}
+      {/* ── OLMo3 narrative ── */}
       {r.narrative && (
         <div style={card} className="p-5">
           <div className="flex items-center gap-2 mb-3">
@@ -230,7 +230,7 @@ export default function ResultsDashboard({
               className="text-xs rounded-full px-2 py-0.5 font-medium"
               style={{ background: "rgba(204,255,0,0.1)", color: "var(--lime)", border: "1px solid rgba(204,255,0,0.2)" }}
             >
-              OLMo2-7B
+              OLMo3-7B
             </span>
           </div>
           <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--text)" }}>

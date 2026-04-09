@@ -63,7 +63,7 @@ export default function RootLayout({
                 PointCheck
               </span>
               <span className="text-xs mt-0.5 block" style={{ color: "var(--muted)" }}>
-                WCAG 2.1 Level AA — Powered by OLMo2 &amp; Molmo2
+                WCAG 2.1 Level AA — Powered by OLMo3 &amp; Molmo2
               </span>
             </div>
           </a>
@@ -100,7 +100,7 @@ export default function RootLayout({
                   rel="noopener noreferrer"
                   style={{ color: "var(--lime)" }}
                 >
-                  Allen AI OLMo2 and Molmo2
+                  Allen AI OLMo3 and Molmo2
                 </a>
               </p>
             </div>

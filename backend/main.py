@@ -172,7 +172,7 @@ async def websocket_run(ws: WebSocket, run_id: str):
     try:
         global _agent, _pointer
         if _agent is None:
-            await send({"type": "status", "message": "Loading OLMo2-7B-Instruct (narrative)..."})
+            await send({"type": "status", "message": "Loading OLMo3-7B-Instruct (narrative)..."})
             _agent = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: WCAGAgent(use_quantization=run["use_quantization"])
             )
@@ -245,7 +245,7 @@ async def websocket_run(ws: WebSocket, run_id: str):
         run["status"] = "complete"
         run["completed_at"] = datetime.utcnow().isoformat()
 
-        await send({"type": "status", "message": "Generating accessibility narrative with OLMo2..."})
+        await send({"type": "status", "message": "Generating accessibility narrative with OLMo3..."})
         narrative = await _agent.generate_narrative(run["results"], run["url"])
         run["narrative"] = narrative
 

@@ -2,7 +2,7 @@
 PointCheck — Modal Deployment
 
 Two-model architecture:
-  allenai/OLMo-2-1124-7B-Instruct  — executive summary narrative (text)
+  allenai/Olmo-3-7B-Instruct        — executive summary narrative (text)
   allenai/Molmo2-4B                 — visual pointer for focus confirmation (vision)
 
 Five WCAG tests run fully programmatically via Playwright.
@@ -19,7 +19,7 @@ image = (
     .pip_install(
         "torch",
         "torchvision",
-        "transformers>=4.45.0",
+        "transformers>=4.57.0",
         "Pillow",
         "einops",
         "requests",

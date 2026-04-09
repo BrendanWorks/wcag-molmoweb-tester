@@ -1,7 +1,7 @@
 """
 Pre-downloads and patches both AllenAI models:
 
-  allenai/OLMo-2-1124-7B-Instruct   — executive summary narrative generation
+  allenai/Olmo-3-7B-Instruct         — executive summary narrative generation
   allenai/Molmo2-4B                  — visual pointer for focus indicator confirmation
 
 Run during Modal image build to cache weights (~22GB total).
@@ -9,19 +9,19 @@ Run during Modal image build to cache weights (~22GB total).
 import torch
 
 # ════════════════════════════════════════════════════════════════
-#  1. OLMo2-7B-Instruct  (text-only, no patches needed)
+#  1. Olmo-3-7B-Instruct  (text-only, no patches needed)
 # ════════════════════════════════════════════════════════════════
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-print("Downloading OLMo2 tokenizer...")
-AutoTokenizer.from_pretrained("allenai/OLMo-2-1124-7B-Instruct")
-print("Downloading OLMo2 weights...")
+print("Downloading OLMo3 tokenizer...")
+AutoTokenizer.from_pretrained("allenai/Olmo-3-7B-Instruct")
+print("Downloading OLMo3 weights...")
 AutoModelForCausalLM.from_pretrained(
-    "allenai/OLMo-2-1124-7B-Instruct",
+    "allenai/Olmo-3-7B-Instruct",
     torch_dtype=torch.bfloat16,
     device_map="auto",
 )
-print("OLMo2 cached.")
+print("OLMo3 cached.")
 
 # ════════════════════════════════════════════════════════════════
 #  2. Molmo2-4B  (vision-language, requires compat patches)

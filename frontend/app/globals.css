@@ -9,7 +9,7 @@
   --crimson: #FF3366;
   --amber:   #FFB800;
   --text:    #EFEFEF;
-  --muted:   #7A7A82;
+  --muted:   #909099;
 }
 
 /* Nav hover helpers (used in Server Component layout — can't use inline handlers) */

@@ -28,6 +28,8 @@ export default function AuditForm() {
   const coldStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Keep a snapshot of settings for retry
   const lastSettingsRef = useRef({ task, selectedTests, useQuantization });
+  // Collect screenshot_b64 from streaming result events (stripped from done report to save WS payload)
+  const screenshotMapRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     return () => {
@@ -50,6 +52,7 @@ export default function AuditForm() {
     setEvents([]);
     setReport(null);
     setShowColdStart(false);
+    screenshotMapRef.current = {};
     setPhase("running");
 
     // Show cold-start notice if no events arrive within 8 s
@@ -89,8 +92,28 @@ export default function AuditForm() {
         dismissColdStart(); // first event = models loaded
         const msg = JSON.parse(ev.data as string) as Record<string, unknown>;
         setEvents((prev) => [...prev, msg]);
+
+        // Collect screenshot_b64 from each result event (stripped from the final report to save WS payload)
+        if (msg.type === "result") {
+          const data = msg.data as Record<string, unknown> | undefined;
+          const testId = (data?.test_id ?? msg.test) as string | undefined;
+          const b64 = data?.screenshot_b64 as string | undefined;
+          if (testId && b64) screenshotMapRef.current[testId] = b64;
+        }
+
         if (msg.type === "done") {
-          setReport(msg.report as Record<string, unknown>);
+          // Merge screenshots back into test_summaries before storing the report
+          const report = msg.report as Record<string, unknown>;
+          const summaries = report?.test_summaries as Array<Record<string, unknown>> | undefined;
+          if (summaries) {
+            summaries.forEach((ts) => {
+              const id = ts.test_id as string;
+              if (!ts.screenshot_b64 && screenshotMapRef.current[id]) {
+                ts.screenshot_b64 = screenshotMapRef.current[id];
+              }
+            });
+          }
+          setReport(report);
           setPhase("done");
           ws.close();
         }

@@ -171,12 +171,6 @@ export default function ResultsDashboard({
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span
-                className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                style={{ color: status.color, background: status.bg }}
-              >
-                {status.label}
-              </span>
-              <span
                 className="text-xs font-mono px-2 py-1 rounded-full"
                 style={{ color: "var(--muted)", background: "var(--surface2)", border: "1px solid var(--border)" }}
               >
@@ -188,11 +182,17 @@ export default function ResultsDashboard({
               {r.run_id} · {new Date(r.generated_at).toLocaleString()}
             </p>
           </div>
-          <div className="text-center">
+          <div className="text-center flex-shrink-0">
             <p className="text-5xl font-bold tabular-nums" style={{ color: complianceColor }}>
               {r.compliance_percentage}%
             </p>
             <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Compliance</p>
+            <span
+              className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full mt-1.5"
+              style={{ color: status.color, background: status.bg }}
+            >
+              {status.label}
+            </span>
           </div>
         </div>
 

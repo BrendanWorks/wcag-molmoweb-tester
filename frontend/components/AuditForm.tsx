@@ -203,39 +203,14 @@ export default function AuditForm() {
       {/* ── Form ── */}
       {phase === "form" && (
         <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
-                Run a PointCheck
-              </h2>
-              <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-                Enter a URL and choose which WCAG {wcagVersion} Level AA tests to run. Powered by
-                Allen AI&apos;s OLMo3 and Molmo2 models.
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-xs font-medium" style={{ color: "var(--muted)" }}>WCAG Version</span>
-              <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--border)" }}>
-                {(["2.1", "2.2"] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setWcagVersion(v)}
-                    className="px-3 py-1.5 text-xs font-semibold transition-colors"
-                    style={
-                      wcagVersion === v
-                        ? { background: "var(--lime)", color: "#0A0A0B" }
-                        : { background: "var(--surface2)", color: "var(--muted)" }
-                    }
-                  >
-                    {v} AA
-                  </button>
-                ))}
-              </div>
-              {wcagVersion === "2.2" && (
-                <span className="text-xs" style={{ color: "var(--muted)" }}>Current standard</span>
-              )}
-            </div>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text)" }}>
+              Run a PointCheck
+            </h2>
+            <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
+              Enter a URL and choose which WCAG {wcagVersion} Level AA tests to run. Powered by
+              Allen AI&apos;s OLMo3 and Molmo2 models.
+            </p>
           </div>
 
           {error && (
@@ -269,6 +244,34 @@ export default function AuditForm() {
           </div>
 
           <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium" style={{ color: "var(--text)" }}>
+                WCAG Version
+              </label>
+              {wcagVersion === "2.2" && (
+                <span className="text-xs" style={{ color: "var(--muted)" }}>Current standard</span>
+              )}
+            </div>
+            <div className="flex rounded-lg overflow-hidden w-fit" style={{ border: "1px solid var(--border)" }}>
+              {(["2.1", "2.2"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setWcagVersion(v)}
+                  className="px-4 py-2 text-sm font-semibold transition-colors"
+                  style={
+                    wcagVersion === v
+                      ? { background: "var(--lime)", color: "#0A0A0B" }
+                      : { background: "var(--surface2)", color: "var(--muted)" }
+                  }
+                >
+                  {v} AA
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
             <label htmlFor="task" className="block text-sm font-medium" style={{ color: "var(--text)" }}>
               Task Description
               <span className="ml-1 text-xs font-normal" style={{ color: "var(--muted)" }}>
@@ -287,7 +290,7 @@ export default function AuditForm() {
             />
           </div>
 
-          <TestSelector selected={selectedTests} onChange={setSelectedTests} />
+          <TestSelector selected={selectedTests} onChange={setSelectedTests} wcagVersion={wcagVersion} />
 
           <div className="flex items-center gap-2">
             <input
@@ -312,6 +315,121 @@ export default function AuditForm() {
             Run {selectedTests.length} Test{selectedTests.length !== 1 ? "s" : ""}
           </button>
         </form>
+      )}
+
+      {/* ── Landing sections (form phase only) ── */}
+      {phase === "form" && (
+        <div className="space-y-20 mt-24 pb-16">
+
+          {/* Section A — Why PointCheck */}
+          <section>
+            <h2 className="text-xl font-bold mb-1" style={{ color: "var(--text)" }}>
+              Why PointCheck beats a linter
+            </h2>
+            <p className="text-sm mb-8" style={{ color: "var(--muted)" }}>
+              Most tools stop at the DOM. PointCheck drives a real browser and uses vision AI to catch what static analysis misses.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[
+                {
+                  icon: "⌨",
+                  title: "Keyboard Navigation",
+                  body: "Drives real Tab presses through interactive elements — catches traps and missing skip links that linters ignore.",
+                },
+                {
+                  icon: "👁",
+                  title: "Focus Visibility",
+                  body: "Molmo2 visually confirms each focus ring exists — not just a CSS property check that CSS resets can fool.",
+                },
+                {
+                  icon: "🏗",
+                  title: "Page Structure",
+                  body: "Alt text, headings, landmarks, ARIA, duplicate IDs, link text, and touch targets in one pass.",
+                },
+                {
+                  icon: "🎨",
+                  title: "Color & Contrast",
+                  body: "Simulates Deuteranopia and walks every text node in the live DOM for real contrast ratios.",
+                },
+                {
+                  icon: "🔍",
+                  title: "Resize & Reflow",
+                  body: "200% zoom via Chrome DevTools Protocol — detects horizontal scroll and overflow-clipped text.",
+                },
+                {
+                  icon: "📋",
+                  title: "Form Error Handling",
+                  body: "Submits invalid data and checks error messages are descriptive, associated, and suggest corrections.",
+                },
+              ].map((card) => (
+                <div
+                  key={card.title}
+                  className="rounded-xl p-4 space-y-2"
+                  style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+                >
+                  <div className="text-2xl" aria-hidden="true">{card.icon}</div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{card.title}</p>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--muted)" }}>{card.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Section B — Live demo */}
+          <section className="rounded-2xl p-8 text-center space-y-4" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+            <h2 className="text-xl font-bold" style={{ color: "var(--text)" }}>See it in action</h2>
+            <p className="text-sm max-w-md mx-auto" style={{ color: "var(--muted)" }}>
+              No account needed. Paste any URL above and run all six checks in about 90 seconds.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="inline-block font-semibold px-6 py-2.5 rounded-lg text-sm transition-opacity hover:opacity-90 cursor-pointer"
+              style={{ background: "var(--lime)", color: "#0A0A0B" }}
+            >
+              Try it now — free
+            </button>
+          </section>
+
+          {/* Section C — How it works */}
+          <section>
+            <h2 className="text-xl font-bold mb-8" style={{ color: "var(--text)" }}>How it works</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+              {[
+                {
+                  step: "1",
+                  title: "Enter a URL",
+                  body: "Paste any public URL and pick which WCAG 2.1 or 2.2 Level AA tests to run.",
+                },
+                {
+                  step: "2",
+                  title: "Real browser + AI",
+                  body: "A headless Chrome instance drives the page while OLMo3 and Molmo2 analyse structure and visuals.",
+                },
+                {
+                  step: "3",
+                  title: "Actionable report",
+                  body: "Get a compliance score, per-criterion findings, and a downloadable PDF — ready to share with your team.",
+                },
+              ].map((item) => (
+                <div key={item.step} className="flex gap-4 items-start">
+                  <div
+                    className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                    style={{ background: "var(--lime)", color: "#0A0A0B" }}
+                    aria-hidden="true"
+                  >
+                    {item.step}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold mb-1" style={{ color: "var(--text)" }}>{item.title}</p>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--muted)" }}>{item.body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+        </div>
       )}
 
       {/* ── Running ── */}

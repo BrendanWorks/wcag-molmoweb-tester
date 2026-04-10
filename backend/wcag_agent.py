@@ -279,6 +279,30 @@ class WCAGAgent:
         self.model.eval()
         print("[OLMo3] Ready")
 
+    # All valid WCAG 2.1 success criteria. Used to strip hallucinated references
+    # from OLMo output — the model sometimes invents criterion numbers (e.g. "2.8")
+    # that do not exist in the spec.
+    _VALID_WCAG_21 = {
+        "1.1.1", "1.2.1", "1.2.2", "1.2.3", "1.2.4", "1.2.5",
+        "1.3.1", "1.3.2", "1.3.3", "1.3.4", "1.3.5",
+        "1.4.1", "1.4.2", "1.4.3", "1.4.4", "1.4.5",
+        "1.4.10", "1.4.11", "1.4.12", "1.4.13",
+        "2.1.1", "2.1.2", "2.1.4",
+        "2.2.1", "2.2.2", "2.3.1",
+        "2.4.1", "2.4.2", "2.4.3", "2.4.4", "2.4.5", "2.4.6", "2.4.7",
+        "2.5.1", "2.5.2", "2.5.3", "2.5.4",
+        "3.1.1", "3.1.2", "3.2.1", "3.2.2", "3.2.3", "3.2.4",
+        "3.3.1", "3.3.2", "3.3.3", "3.3.4",
+        "4.1.1", "4.1.2", "4.1.3",
+    }
+
+    def _strip_hallucinated_criteria(self, text: str) -> str:
+        """Remove any WCAG criterion number that isn't in the WCAG 2.1 spec."""
+        def _check(m: re.Match) -> str:
+            crit = m.group(0)
+            return crit if crit in self._VALID_WCAG_21 else ""
+        return re.sub(r'\b\d+\.\d+(?:\.\d+)?\b', _check, text)
+
     async def generate_narrative(self, results: list, url: str) -> str:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._narrative_sync, results, url)
@@ -297,17 +321,24 @@ class WCAGAgent:
                 for r in results
             ]
             passed = [f for f in findings if f["result"] == "pass"]
+            # Build the explicit list of criteria from actual findings so OLMo
+            # cannot hallucinate criterion numbers outside what was tested.
+            all_criteria = sorted({
+                c for f in findings for c in f.get("wcag_criteria", [])
+            })
 
             prompt = (
                 f"You are a professional web accessibility auditor. "
                 f"You have completed a WCAG 2.1 Level AA audit of: {url}\n\n"
                 f"Findings:\n{json.dumps(findings, indent=2)}\n\n"
-                f"Write a concise executive summary (3–4 paragraphs) covering:\n"
-                f"1. Overall compliance ({len(passed)}/{len(findings)} tests passed)\n"
-                f"2. Most critical issues with WCAG criteria references\n"
-                f"3. Prioritized, actionable remediation steps\n"
-                f"4. What is working well\n\n"
-                f"Be specific and address the development team directly."
+                f"The WCAG criteria covered in this audit are: {', '.join(all_criteria)}.\n"
+                f"Do NOT reference any other WCAG criterion numbers outside this list.\n\n"
+                f"Write a single executive summary paragraph of 100-150 words covering:\n"
+                f"- Overall result ({len(passed)}/{len(findings)} tests passed)\n"
+                f"- The most critical issues found and why they matter\n"
+                f"- The single most important remediation step\n\n"
+                f"Address the development team directly. No headings, no bullet points. "
+                f"Plain prose only."
             )
 
             messages = [{"role": "user", "content": prompt}]
@@ -319,7 +350,7 @@ class WCAGAgent:
             with torch.inference_mode():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=600,
+                    max_new_tokens=250,
                     do_sample=True,
                     temperature=0.7,
                     top_p=0.9,
@@ -327,6 +358,7 @@ class WCAGAgent:
 
             new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
             narrative = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+            narrative = self._strip_hallucinated_criteria(narrative)
             print(f"[OLMo3] Narrative: {len(narrative)} chars")
             return narrative
 

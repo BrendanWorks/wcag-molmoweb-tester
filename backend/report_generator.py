@@ -46,7 +46,8 @@ def generate_report(run: dict) -> dict:
 
     total = len(results)
     pass_count = len(passed)
-    compliance_pct = round((pass_count / total * 100) if total > 0 else 0, 1)
+    # Warnings are not failures — count pass + warning toward compliance
+    compliance_pct = round(((pass_count + len(warnings)) / total * 100) if total > 0 else 0, 1)
 
     # Aggregate failing WCAG criteria
     criteria_failures: dict[str, int] = {}

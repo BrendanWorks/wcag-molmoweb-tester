@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { generatePdf } from "@/lib/generatePdf";
 
 interface Molmo2Point {
   x: number;
@@ -152,6 +153,10 @@ export default function ResultsDashboard({
     a.click();
   }
 
+  function downloadPdf() {
+    generatePdf(report);
+  }
+
   const complianceColor =
     r.compliance_percentage >= 80 ? "var(--lime)" :
     r.compliance_percentage >= 50 ? "var(--amber)" : "var(--crimson)";
@@ -216,6 +221,13 @@ export default function ResultsDashboard({
               {btn.label}
             </button>
           ))}
+          <button
+            onClick={downloadPdf}
+            className="text-xs rounded-lg px-3 py-1.5 transition-opacity hover:opacity-80 font-medium"
+            style={{ background: "rgba(204,255,0,0.1)", border: "1px solid rgba(204,255,0,0.25)", color: "var(--lime)" }}
+          >
+            Download PDF
+          </button>
         </div>
       </div>
 

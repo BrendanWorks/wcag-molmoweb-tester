@@ -141,10 +141,14 @@ class MolmoWebAnalyzer:
                 bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
+                # Keep SigLIP vision encoder in bfloat16.
+                # Quantizing it causes Params4bit to produce Byte activations
+                # inside the ViT → LayerNormKernelImpl not implemented for 'Byte'.
+                # bnb_4bit_skip_modules is consumed by Transformers' quantization
+                # pipeline before the model __init__ sees it (safe with remote code).
+                bnb_4bit_skip_modules=["vision_backbone"],
             )
             model_kwargs["device_map"] = "auto"
-            # Keep vision encoder in bfloat16 — do not quantize it
-            model_kwargs["modules_to_not_convert"] = ["vision_backbone"]
         else:
             model_kwargs["torch_dtype"] = self.model_dtype
 

@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { Suspense } from "react";
 import "./globals.css";
 import { WcagVersionProvider } from "@/components/WcagVersionProvider";
 import HeaderVersion from "@/components/HeaderVersion";
+import GoogleAnalytics from "@/components/GoogleAnalytics";
 
 export const metadata: Metadata = {
   title: "PointCheck — WCAG 2.1 & 2.2 Accessibility Tester",
@@ -126,10 +128,14 @@ export default function RootLayout({
         />
         <Script id="ga4-init" strategy="afterInteractive">{`
           window.dataLayer = window.dataLayer || [];
-          function gtag(){dataLayer.push(arguments);}
-          gtag('js', new Date());
-          gtag('config', 'G-W08D0QMLTJ');
+          window.gtag = function gtag(){ window.dataLayer.push(arguments); };
+          window.gtag('js', new Date());
+          window.gtag('config', 'G-W08D0QMLTJ');
         `}</Script>
+        {/* SPA route-change page views — useSearchParams() needs Suspense */}
+        <Suspense fallback={null}>
+          <GoogleAnalytics measurementId="G-W08D0QMLTJ" />
+        </Suspense>
       </body>
     </html>
   );

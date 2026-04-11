@@ -1,10 +1,11 @@
 /* Thin wrapper around gtag so we get type safety and a single import site. */
 
-declare function gtag(command: "event", action: string, params?: Record<string, unknown>): void;
+type GtagFn = (command: string, ...args: unknown[]) => void;
 
 function fire(action: string, params?: Record<string, unknown>) {
   if (typeof window === "undefined") return;
-  if (typeof (window as unknown as { gtag?: unknown }).gtag !== "function") return;
+  const gtag = (window as unknown as { gtag?: GtagFn }).gtag;
+  if (typeof gtag !== "function") return;
   gtag("event", action, params);
 }
 

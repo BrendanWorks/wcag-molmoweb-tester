@@ -17,8 +17,7 @@ export default function AuditForm() {
   const [selectedTests, setSelectedTests] = useState<string[]>(
     TEST_OPTIONS.map((t) => t.id)
   );
-  const [useQuantization, setUseQuantization] = useState(false);
-  const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
+const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
   const [phase, setPhase] = useState<Phase>("form");
   const [events, setEvents] = useState<object[]>([]);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
@@ -29,7 +28,7 @@ export default function AuditForm() {
   const wsRef = useRef<WebSocket | null>(null);
   const coldStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Keep a snapshot of settings for retry
-  const lastSettingsRef = useRef({ task, selectedTests, useQuantization, wcagVersion });
+  const lastSettingsRef = useRef({ task, selectedTests, wcagVersion });
   // Collect screenshot_b64 from streaming result events (stripped from done report to save WS payload)
   const screenshotMapRef = useRef<Record<string, string>>({});
 
@@ -44,7 +43,6 @@ export default function AuditForm() {
   async function runAudit(urlValue: string, settings: {
     task: string;
     selectedTests: string[];
-    useQuantization: boolean;
     wcagVersion: "2.1" | "2.2";
   }) {
     wsRef.current?.close();
@@ -77,8 +75,7 @@ export default function AuditForm() {
           url: urlValue,
           tests: settings.selectedTests,
           task: settings.task.trim() || "Navigate and use the main features of this website",
-          use_quantization: settings.useQuantization,
-          wcag_version: settings.wcagVersion,
+wcag_version: settings.wcagVersion,
         }),
       });
 
@@ -169,7 +166,7 @@ export default function AuditForm() {
       urlValue = `https://${urlValue}`;
     }
 
-    const settings = { task, selectedTests, useQuantization, wcagVersion };
+    const settings = { task, selectedTests, wcagVersion };
     lastSettingsRef.current = settings;
     runAudit(urlValue, settings);
   }
@@ -293,22 +290,7 @@ export default function AuditForm() {
 
           <TestSelector selected={selectedTests} onChange={setSelectedTests} wcagVersion={wcagVersion} />
 
-          <div className="flex items-center gap-2">
-            <input
-              id="quantize"
-              type="checkbox"
-              checked={useQuantization}
-              onChange={(e) => setUseQuantization(e.target.checked)}
-              className="h-4 w-4 rounded"
-              style={{ accentColor: "var(--lime)" }}
-            />
-            <label htmlFor="quantize" className="text-sm" style={{ color: "var(--muted)" }}>
-              Use 4-bit quantization{" "}
-              <span style={{ color: "var(--border)" }}>(less VRAM, slower inference)</span>
-            </label>
-          </div>
-
-          <button
+<button
             type="submit"
             className="font-semibold px-6 py-2.5 rounded-lg text-sm transition-opacity hover:opacity-90 cursor-pointer"
             style={{ background: "var(--lime)", color: "#0A0A0B" }}

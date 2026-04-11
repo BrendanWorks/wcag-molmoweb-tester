@@ -144,9 +144,10 @@ class MolmoWebAnalyzer:
                 # Keep SigLIP vision encoder in bfloat16.
                 # Quantizing it causes Params4bit to produce Byte activations
                 # inside the ViT → LayerNormKernelImpl not implemented for 'Byte'.
-                # bnb_4bit_skip_modules is consumed by Transformers' quantization
-                # pipeline before the model __init__ sees it (safe with remote code).
-                bnb_4bit_skip_modules=["vision_backbone"],
+                # llm_int8_skip_modules controls skip-list for BOTH 8-bit and 4-bit
+                # quantization in Transformers (bnb_4bit_skip_modules is not wired
+                # into the actual replacement pipeline).
+                llm_int8_skip_modules=["vision_backbone"],
             )
             model_kwargs["device_map"] = "auto"
         else:

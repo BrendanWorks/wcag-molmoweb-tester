@@ -121,14 +121,14 @@ export default function RootLayout({
         </footer>
         </WcagVersionProvider>
         <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-HZLKPK3KK2"
+          src="https://www.googletagmanager.com/gtag/js?id=G-W08D0QMLTJ"
           strategy="afterInteractive"
         />
         <Script id="ga4-init" strategy="afterInteractive">{`
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
           gtag('js', new Date());
-          gtag('config', 'G-HZLKPK3KK2');
+          gtag('config', 'G-W08D0QMLTJ');
         `}</Script>
       </body>
     </html>

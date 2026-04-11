@@ -61,9 +61,6 @@ class OLMo3Narrator:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
-        # Disable gradients — same fix as MolmoWebAnalyzer: bitsandbytes 4-bit
-        # models leave internal QLoRA buffers with requires_grad=True by default.
-        self.model.requires_grad_(False)
         print("[OLMo3] Ready")
 
     async def generate_narrative(

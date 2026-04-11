@@ -129,8 +129,13 @@ class MolmoWebAnalyzer:
         }
 
         if self.device == "cuda":
-            # Always quantize on CUDA — MolmoWeb-8B + OLMo3 must coexist on A10G.
-            # 4-bit drops ~16GB to ~4GB; pointing / QA quality is unaffected.
+            # 4-bit NF4 for the language-model layers only.
+            # vision_backbone (SigLIP ViT, ~300M params / ~0.6 GB) is kept in
+            # bfloat16 via modules_to_not_convert because:
+            #   - Quantizing it to 4-bit causes Params4bit to return raw uint8
+            #     activations inside the ViT, hitting LayerNormKernelImpl Byte error.
+            #   - The 0.6 GB overhead is negligible vs. fixing the inference crash.
+            # Total VRAM: ~4.6 GB MolmoWeb + ~3.5 GB OLMo = ~8.1 GB static.
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.bfloat16,
@@ -138,6 +143,8 @@ class MolmoWebAnalyzer:
                 bnb_4bit_quant_type="nf4",
             )
             model_kwargs["device_map"] = "auto"
+            # Keep vision encoder in bfloat16 — do not quantize it
+            model_kwargs["modules_to_not_convert"] = ["vision_backbone"]
         else:
             model_kwargs["torch_dtype"] = self.model_dtype
 
@@ -147,12 +154,6 @@ class MolmoWebAnalyzer:
         if self.device == "cpu":
             self.model = self.model.to(self.device)
         self.model.eval()
-        # Disable gradients on all parameters — required for 4-bit NF4 models
-        # because bitsandbytes leaves some internal buffers with requires_grad=True
-        # (intended for QLoRA training). Without this, inference triggers
-        # "data set to a tensor that requires gradients must be floating point
-        # or complex dtype" when bitsandbytes dequantizes weights.
-        self.model.requires_grad_(False)
 
         # ── Compat patch 3: cache_position shim ──────────────────────────────
         # Transformers 5.x no longer passes cache_position to

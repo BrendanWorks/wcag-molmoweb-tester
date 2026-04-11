@@ -67,6 +67,9 @@ def download_molmoweb():
             bnb_4bit_quant_type="nf4",
         )
         model_kwargs["device_map"] = "auto"
+        # Keep SigLIP vision encoder in bfloat16 (quantizing it causes Byte
+        # tensor dtype errors in LayerNorm during inference).
+        model_kwargs["modules_to_not_convert"] = ["vision_backbone"]
     else:
         model_kwargs["torch_dtype"] = torch.float32
 

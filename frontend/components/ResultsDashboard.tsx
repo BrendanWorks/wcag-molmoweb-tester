@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { generatePdf } from "@/lib/generatePdf";
+import { analytics } from "@/lib/analytics";
 
 interface Molmo2Point {
   x: number;
@@ -131,6 +132,7 @@ export default function ResultsDashboard({
   const status = STATUS_STYLE[r.overall_status] ?? STATUS_STYLE.issues_found;
 
   function downloadJson() {
+    analytics.reportDownloaded("json");
     const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -139,6 +141,7 @@ export default function ResultsDashboard({
   }
 
   function downloadCsv() {
+    analytics.reportDownloaded("csv");
     const rows = [
       ["Test", "Result", "Severity", "WCAG Criteria", "Failure Reason", "Recommendation"],
       ...(r.test_summaries ?? []).map((ts: TestSummary) => [
@@ -155,6 +158,7 @@ export default function ResultsDashboard({
   }
 
   function downloadPdf() {
+    analytics.reportDownloaded("pdf");
     generatePdf(report);
   }
 

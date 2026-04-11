@@ -5,6 +5,7 @@ import TestSelector, { TEST_OPTIONS } from "@/components/TestSelector";
 import ProgressDisplay from "@/components/ProgressDisplay";
 import ResultsDashboard from "@/components/ResultsDashboard";
 import { useWcagVersion } from "@/components/WcagVersionProvider";
+import { analytics } from "@/lib/analytics";
 
 type Phase = "form" | "running" | "done";
 
@@ -117,18 +118,31 @@ wcag_version: settings.wcagVersion,
           setReport(report);
           setPhase("done");
           ws.close();
+          const s = (report.summary as Record<string, number>) ?? {};
+          analytics.auditCompleted({
+            url: urlValue,
+            wcagVersion: settings.wcagVersion,
+            passed: s.passed ?? 0,
+            failed: s.failed ?? 0,
+            warnings: s.warnings ?? 0,
+            compliancePct: (report.compliance_percentage as number) ?? 0,
+          });
         }
         if (msg.type === "error") {
-          setError(msg.message as string);
+          const errMsg = msg.message as string;
+          setError(errMsg);
           setPhase("done");
           ws.close();
+          analytics.auditError(urlValue, errMsg);
         }
       };
 
       ws.onerror = () => {
         dismissColdStart();
-        setError("WebSocket connection failed. Is the backend running on port 8000?");
+        const errMsg = "WebSocket connection failed. Is the backend running on port 8000?";
+        setError(errMsg);
         setPhase("done");
+        analytics.auditError(urlValue, errMsg);
       };
 
       ws.onclose = (ev) => {
@@ -146,8 +160,10 @@ wcag_version: settings.wcagVersion,
       };
     } catch (err: unknown) {
       dismissColdStart();
-      setError(err instanceof Error ? err.message : String(err));
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setError(errMsg);
       setPhase("done");
+      analytics.auditError(urlValue, errMsg);
     }
   }
 
@@ -168,6 +184,7 @@ wcag_version: settings.wcagVersion,
 
     const settings = { task, selectedTests, wcagVersion };
     lastSettingsRef.current = settings;
+    analytics.auditStarted(urlValue, selectedTests, wcagVersion);
     runAudit(urlValue, settings);
   }
 
@@ -178,6 +195,7 @@ wcag_version: settings.wcagVersion,
 
   // ── Reset to form ────────────────────────────────────────────────────────────
   function handleReset() {
+    if (phase === "running") analytics.auditCancelled(submittedUrl);
     wsRef.current?.close();
     if (coldStartTimerRef.current) clearTimeout(coldStartTimerRef.current);
     setPhase("form");
@@ -255,7 +273,7 @@ wcag_version: settings.wcagVersion,
                 <button
                   key={v}
                   type="button"
-                  onClick={() => setWcagVersion(v)}
+                  onClick={() => { setWcagVersion(v); analytics.wcagVersionSelected(v); }}
                   className="px-4 py-2 text-sm font-semibold transition-colors"
                   style={
                     wcagVersion === v

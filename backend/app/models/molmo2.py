@@ -175,6 +175,17 @@ class MolmoWebAnalyzer:
             )
         self.model.prepare_inputs_for_generation = _patched_prepare
 
+        # ── Compat patch 4: bypass _validate_model_kwargs (Transformers 5.5.3) ─
+        # Transformers 5.5.3 tightened _validate_model_kwargs() to flag any kwarg
+        # not explicitly listed in the model's forward() signature. Molmo2 passes
+        # vision inputs (pixel_values, image_token_pooling, image_grids,
+        # image_num_crops, attention_mask) via **kwargs in its forward signature
+        # rather than as explicit named params, so the validator incorrectly
+        # raises ValueError("... not used by the model").
+        # Without this patch, every model.generate() call fails silently (caught
+        # by _analyze_sync's broad except) → MolmoWeb returns "" for everything.
+        self.model._validate_model_kwargs = lambda model_kwargs: None
+
         print(f"[MolmoWebAnalyzer] Ready ({self.device})")
 
     # ── Public async API ──────────────────────────────────────────────────────
@@ -270,31 +281,23 @@ class MolmoWebAnalyzer:
         return self.processor.decode(new_tokens, skip_special_tokens=True).strip()
 
     def _analyze_sync(self, screenshot: Image.Image, question: str) -> str:
-        try:
-            prompt = (
-                "You are a web accessibility expert reviewing a webpage screenshot.\n"
-                f"Question: {question}\n"
-                "Give a concise, factual answer based only on what you can see in the screenshot. "
-                "If you cannot determine the answer from the screenshot alone, say so."
-            )
-            response = self._run_inference(screenshot, prompt, max_new_tokens=180)
-            print(f"[MolmoWebAnalyzer] QA '{question[:50]}' → {response[:80]}")
-            return response
-        except Exception as e:
-            print(f"[MolmoWebAnalyzer] analyze error: {e}")
-            return ""
+        prompt = (
+            "You are a web accessibility expert reviewing a webpage screenshot.\n"
+            f"Question: {question}\n"
+            "Give a concise, factual answer based only on what you can see in the screenshot. "
+            "If you cannot determine the answer from the screenshot alone, say so."
+        )
+        response = self._run_inference(screenshot, prompt, max_new_tokens=180)
+        print(f"[MolmoWebAnalyzer] QA '{question[:50]}' → {response[:80]}")
+        return response
 
     def _point_sync(
         self, screenshot: Image.Image, query: str
     ) -> Optional[tuple[float, float]]:
-        try:
-            prompt = f"Point to: {query}"
-            response = self._run_inference(screenshot, prompt, max_new_tokens=80)
-            print(f"[MolmoWebAnalyzer] point '{query[:40]}' → {response[:60]}")
-            return _parse_point(response, screenshot.size)
-        except Exception as e:
-            print(f"[MolmoWebAnalyzer] point_to error: {e}")
-            return None
+        prompt = f"Point to: {query}"
+        response = self._run_inference(screenshot, prompt, max_new_tokens=80)
+        print(f"[MolmoWebAnalyzer] point '{query[:40]}' → {response[:60]}")
+        return _parse_point(response, screenshot.size)
 
     # ── Screenshot utilities (used by WCAG checks) ────────────────────────────
 

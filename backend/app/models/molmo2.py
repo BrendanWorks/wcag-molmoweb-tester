@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import traceback
 from io import BytesIO
 import base64
 from pathlib import Path
@@ -276,18 +277,25 @@ class MolmoWebAnalyzer:
         }
         input_len = inputs["input_ids"].shape[1]
 
-        # IMPORTANT: Do NOT use torch.autocast with 4-bit NF4 models.
+        # Debug: log all input tensor dtypes so we can trace dtype-mismatch errors
+        for k, v in inputs.items():
+            if isinstance(v, torch.Tensor):
+                print(f"[MolmoWeb input] {k}: shape={v.shape} dtype={v.dtype} device={v.device}")
+
         # bitsandbytes handles dtype internally via bnb_4bit_compute_dtype;
-        # adding autocast on top triggers "data set to a tensor that requires
-        # gradients must be floating point or complex dtype" errors.
-        # torch.inference_mode() alone is correct for quantized models.
-        with torch.inference_mode():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
-            )
+        # use torch.inference_mode() alone (no torch.autocast).
+        try:
+            with torch.inference_mode():
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
+                )
+        except Exception:
+            print("[MolmoWeb] _run_inference FAILED — full traceback:")
+            traceback.print_exc()
+            raise
 
         new_tokens = outputs[0][input_len:]
         return self.processor.decode(new_tokens, skip_special_tokens=True).strip()

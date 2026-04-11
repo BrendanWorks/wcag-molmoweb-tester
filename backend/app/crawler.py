@@ -278,7 +278,27 @@ async def _scan_page(
                     page_url=page_url,
                 )
                 findings["video_info"] = video_info
+
+                # Propagate flicker_risk from multi-frame motion analysis into issues
+                if video_info.get("flicker_risk"):
+                    findings.setdefault("issues", []).append({
+                        "wcag_criterion": "2.3.1",
+                        "severity": "critical",
+                        "description": (
+                            f"Rapid pixel change detected across consecutive frames "
+                            f"(motion_score={video_info.get('motion_score', '?')}). "
+                            "Content may flash >3 times/second — photosensitive seizure risk."
+                        ),
+                    })
+
                 video_findings.append(findings)
+
+                # Summarize pointing results for eval log
+                pointing_detail = ""
+                if findings.get("caption_button_xy"):
+                    pointing_detail += f"caption_btn={findings['caption_button_xy']}; "
+                if findings.get("playpause_button_xy"):
+                    pointing_detail += f"playpause_btn={findings['playpause_button_xy']}"
 
                 # Log video frame analysis to eval dataset
                 if eval_logger:
@@ -287,13 +307,15 @@ async def _scan_page(
                         page_depth=depth,
                         check_id="video_motion",
                         check_name="Video Frame Analysis",
-                        wcag_criteria=["1.2.2", "2.2.2"],
+                        wcag_criteria=["1.2.2", "2.2.2", "2.3.1"],
                         result="warning" if findings.get("issues") else "pass",
-                        severity="major" if findings.get("issues") else "minor",
+                        severity="critical" if video_info.get("flicker_risk") else (
+                            "major" if findings.get("issues") else "minor"
+                        ),
                         failure_reason="; ".join(
                             i.get("description", "") for i in findings.get("issues", [])[:2]
                         ),
-                        molmo_prompt="[video frame: see _VIDEO_SYSTEM_PROMPT]",
+                        molmo_prompt=f"[video frame QA + pointing; {pointing_detail}]",
                         molmo_response=findings.get("raw_response", ""),
                         screenshot_path=video_info.get("frame_path"),
                     )

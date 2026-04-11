@@ -2,7 +2,11 @@
 WCAG Keyboard Navigation — 2.1.1, 2.1.2, 2.4.1, 2.4.3
 
 Layer 1 (programmatic): JS DOM inspection — same logic as PointCheck v1.
-Layer 2 (visual): MolmoWeb-8B confirms skip-nav link visibility.
+Layer 2 (visual):       MolmoWeb-8B confirms skip-nav link visibility.
+Layer 3 (agent):        MolmoWebAgentLoop verifies skip-nav is functional
+                        (clicks it, checks focus actually jumps to main content)
+                        and discovers interactive UI states (dropdowns, modals,
+                        nav toggles) to test their keyboard accessibility.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import asyncio
 from typing import AsyncGenerator
 
+from app.molmo_agent import MolmoWebAgentLoop
 from app.wcag_checks.base import BaseWCAGTest, TestResult
 
 
@@ -205,6 +210,82 @@ class KeyboardNavTest(BaseWCAGTest):
         # Visual layer: ask MolmoWeb if skip nav is visible
         yield self._progress("Running MolmoWeb visual analysis for skip navigation...")
         molmo_analysis = await self._molmo_analyze(summary, self.MOLMO_QUESTION)
+
+        # ── Agent layer: verify skip-nav works + test interactive states ──────
+        agent_findings: list[str] = []
+
+        # 1. If a skip-nav link exists, use the agent to click it and verify
+        #    focus actually jumps past the navigation (functional test).
+        skip_links_found = not any(
+            i.get("criterion") == "2.4.1" for i in static_issues
+        )
+        if skip_links_found:
+            yield self._progress("MolmoWeb agent: clicking skip-nav link to verify it works...")
+            try:
+                agent = MolmoWebAgentLoop(self.analyzer, max_steps=3)
+                skip_result = await agent.run(
+                    page,
+                    "Find the 'Skip to main content' or 'Skip navigation' link near the "
+                    "top of the page and click it. Then describe where focus landed — "
+                    "did it skip past the navigation to the main content?",
+                )
+                if skip_result.steps:
+                    summary_line = (
+                        f"Skip-nav agent ({len(skip_result.steps)} steps): "
+                        + skip_result.action_summary
+                    )
+                    if skip_result.thoughts:
+                        summary_line += f" | {skip_result.thoughts[-1]}"
+                    agent_findings.append(summary_line)
+                    # If agent thought focus did NOT move correctly, flag it
+                    last_thought = (skip_result.thoughts or [""])[-1].lower()
+                    if any(w in last_thought for w in ("did not", "didn't", "no skip", "not move", "fail")):
+                        static_warnings.append({
+                            "criterion": "2.4.1", "severity": "minor",
+                            "description": (
+                                "Skip navigation link found but may not move focus "
+                                f"correctly: {skip_result.thoughts[-1]}"
+                            ),
+                            "examples": [],
+                        })
+            except Exception as e:
+                agent_findings.append(f"Skip-nav agent error (non-fatal): {e}")
+
+        # 2. Discover interactive UI states that Playwright Tab cannot reach:
+        #    hamburger menus, dropdowns, accordions, nav toggles.
+        #    The agent opens them and we verify keyboard reachability of their content.
+        yield self._progress("MolmoWeb agent: discovering and testing interactive navigation elements...")
+        try:
+            agent2 = MolmoWebAgentLoop(self.analyzer, max_steps=5)
+            interactive_result = await agent2.run(
+                page,
+                "Look for navigation elements that open on click or interaction: "
+                "hamburger menus, dropdown menus, accordion nav sections, or 'More' buttons. "
+                "If you find one, click it to open it. Then press Tab twice and describe "
+                "whether the newly-revealed links/items are keyboard-focusable.",
+            )
+            if interactive_result.steps and not interactive_result.completion_reason.startswith("could not"):
+                agent_findings.append(
+                    f"Interactive nav agent ({len(interactive_result.steps)} steps): "
+                    + interactive_result.action_summary
+                )
+                # Check if agent found keyboard inaccessibility in opened states
+                for thought in interactive_result.thoughts:
+                    if any(w in thought.lower() for w in ("not focusable", "can't tab", "cannot tab", "keyboard trap", "no focus")):
+                        static_failures.append({
+                            "criterion": "2.1.1", "severity": "major",
+                            "description": (
+                                "Interactive navigation element opened by MolmoWeb agent "
+                                f"appears keyboard-inaccessible: {thought}"
+                            ),
+                            "examples": [],
+                        })
+                        break
+        except Exception as e:
+            agent_findings.append(f"Interactive nav agent error (non-fatal): {e}")
+
+        if agent_findings:
+            molmo_analysis = (molmo_analysis + "\n" if molmo_analysis else "") + " | ".join(agent_findings)
 
         all_failures = static_failures
         all_warnings = static_warnings

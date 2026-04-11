@@ -2,7 +2,11 @@
 WCAG Form Error Handling — 3.3.1, 3.3.2, 3.3.3, 3.3.4
 
 Layer 1 (programmatic): label presence + aria-invalid + role=alert after submit.
-Layer 2 (visual): MolmoWeb-8B confirms error messages are visible and associated.
+Layer 2 (agent):        MolmoWebAgentLoop fills + submits the form like a real user
+                        (catches forms with JS-only field reveal, multi-step forms,
+                        and non-standard submit patterns). Playwright fallback if
+                        no agent actions executed.
+Layer 3 (visual):       MolmoWeb-8B confirms error messages are visible and associated.
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 import asyncio
 from typing import AsyncGenerator
 
+from app.molmo_agent import MolmoWebAgentLoop
 from app.wcag_checks.base import BaseWCAGTest, TestResult
 
 
@@ -83,27 +88,58 @@ class FormErrorTest(BaseWCAGTest):
         sp   = self.analyzer.save_screenshot(screenshot, self.run_dir, "form_labels")
         sb64 = self.analyzer.image_to_base64(screenshot)
 
-        yield self._progress("Submitting form with invalid data...")
-        for form in form_info:
-            for inp in form["inputs"]:
-                sel = f"#{inp['id']}" if inp["id"] else f"[name='{inp['name']}']"
-                bad = INVALID_DATA.get(inp["type"], "")
-                try:
-                    if inp["type"] not in ("checkbox", "radio", "select"):
-                        await page.fill(sel, bad, timeout=1000)
-                except Exception:
-                    pass
-
-        submitted = False
+        # ── Agent layer: fill + submit form like a real user ─────────────────
+        # MolmoWeb navigates the form visually — it handles multi-step forms,
+        # JS-revealed fields, and non-standard submit patterns that selectors miss.
+        yield self._progress("MolmoWeb agent: filling form with invalid data to trigger errors...")
+        agent_submitted = False
+        agent_log = ""
         try:
-            await page.locator("button[type='submit'], input[type='submit']").first.click(timeout=2000)
-            submitted = True
-        except Exception:
+            agent = MolmoWebAgentLoop(self.analyzer, max_steps=8)
+            agent_result = await agent.run(
+                page,
+                "Fill out all visible form fields with invalid or empty data to trigger "
+                "validation errors. Use obviously wrong values: blank required fields, "
+                "bad email formats (e.g. 'notanemail'), too-short passwords (e.g. 'a'), "
+                "invalid dates (e.g. '99/99/9999'). Then submit the form by clicking the "
+                "submit button or pressing Enter.",
+            )
+            if agent_result.steps:
+                agent_submitted = any(
+                    s.action_type in ("click", "key") and s.executed
+                    for s in agent_result.steps
+                )
+                agent_log = agent_result.action_summary
+                yield self._progress(
+                    f"Agent completed {len(agent_result.steps)} action(s): {agent_log[:80]}"
+                )
+        except Exception as e:
+            yield self._progress(f"Agent form fill error (non-fatal): {e}")
+
+        # ── Playwright fallback: direct fill + submit ─────────────────────────
+        # Run if agent took no actions (e.g. form not visible or agent timed out).
+        submitted = agent_submitted
+        if not submitted:
+            yield self._progress("Playwright fallback: filling form fields directly...")
+            for form in form_info:
+                for inp in form["inputs"]:
+                    sel = f"#{inp['id']}" if inp["id"] else f"[name='{inp['name']}']"
+                    bad = INVALID_DATA.get(inp["type"], "")
+                    try:
+                        if inp["type"] not in ("checkbox", "radio", "select"):
+                            await page.fill(sel, bad, timeout=1000)
+                    except Exception:
+                        pass
+
             try:
-                await page.keyboard.press("Enter")
+                await page.locator("button[type='submit'], input[type='submit']").first.click(timeout=2000)
                 submitted = True
             except Exception:
-                pass
+                try:
+                    await page.keyboard.press("Enter")
+                    submitted = True
+                except Exception:
+                    pass
 
         await asyncio.sleep(1)
         yield self._progress("Checking ARIA error indicators...")
@@ -171,7 +207,7 @@ class FormErrorTest(BaseWCAGTest):
                 failure_reason=w["reason"], recommendation=w["rec"],
                 screenshot_path=err_sp, screenshot_b64=err_sb64,
                 molmo_analysis=molmo_analysis,
-                details={"form_info": form_info, "unlabeled": unlabeled, "error_info": error_info},
+                details={"form_info": form_info, "unlabeled": unlabeled, "error_info": error_info, "agent_log": agent_log},
             )
         else:
             result = TestResult(
@@ -179,7 +215,7 @@ class FormErrorTest(BaseWCAGTest):
                 result="pass", wcag_criteria=self.WCAG_CRITERIA, severity="minor",
                 screenshot_path=err_sp, screenshot_b64=err_sb64,
                 molmo_analysis=molmo_analysis,
-                details={"form_info": form_info, "error_info": error_info},
+                details={"form_info": form_info, "error_info": error_info, "agent_log": agent_log},
             )
 
         yield self._result(result)

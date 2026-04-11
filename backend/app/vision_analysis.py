@@ -372,21 +372,30 @@ async def analyze_video_frame(
     """
     Analyze a single frame captured from a <video> element.
 
+    Two-pass analysis:
+      Pass 1 (QA):      Structured WCAG questions about captions, controls, flashing.
+      Pass 2 (pointing): Molmo2 points to caption button + play/pause button in pixel
+                         space, giving precise element locations for the eval dataset.
+
     Returns a dict:
       {
-        "has_captions":  bool | "unknown",
-        "has_controls":  bool | "unknown",
-        "has_flashing":  bool | "unknown",
-        "issues":        list[dict],   # wcag_criterion, severity, description
-        "raw_response":  str,
+        "has_captions":       bool | "unknown",
+        "has_controls":       bool | "unknown",
+        "has_flashing":       bool | "unknown",
+        "caption_button_xy":  [x, y] px | None,   # Molmo2 pointing result
+        "playpause_button_xy":[x, y] px | None,
+        "issues":             list[dict],
+        "raw_response":       str,
       }
     """
-    empty = {
-        "has_captions": "unknown",
-        "has_controls": "unknown",
-        "has_flashing": "unknown",
-        "issues": [],
-        "raw_response": "",
+    empty: dict[str, Any] = {
+        "has_captions":        "unknown",
+        "has_controls":        "unknown",
+        "has_flashing":        "unknown",
+        "caption_button_xy":   None,
+        "playpause_button_xy": None,
+        "issues":              [],
+        "raw_response":        "",
     }
 
     if analyzer is None or not frame_bytes:
@@ -397,6 +406,7 @@ async def analyze_video_frame(
     except Exception:
         return empty
 
+    # Pass 1: structured QA analysis
     raw = await _run_vision_inference(
         image, _VIDEO_SYSTEM_PROMPT, analyzer, max_new_tokens=256
     )
@@ -404,15 +414,78 @@ async def analyze_video_frame(
         return {**empty, "raw_response": raw}
 
     parsed = _extract_json(raw)
-    return {
-        "has_captions":     parsed.get("has_captions", "unknown"),
-        "has_controls":     parsed.get("has_controls", "unknown"),
-        "has_flashing":     parsed.get("has_flashing", "unknown"),
-        "caption_evidence": parsed.get("caption_evidence", ""),
-        "controls_evidence":parsed.get("controls_evidence", ""),
-        "issues":           parsed.get("issues", []),
-        "raw_response":     raw,
+    result: dict[str, Any] = {
+        "has_captions":        parsed.get("has_captions", "unknown"),
+        "has_controls":        parsed.get("has_controls", "unknown"),
+        "has_flashing":        parsed.get("has_flashing", "unknown"),
+        "caption_evidence":    parsed.get("caption_evidence", ""),
+        "controls_evidence":   parsed.get("controls_evidence", ""),
+        "caption_button_xy":   None,
+        "playpause_button_xy": None,
+        "issues":              parsed.get("issues", []),
+        "raw_response":        raw,
     }
+
+    # Pass 2: pointing — locate caption button and play/pause button in pixel space.
+    # This gives the eval dataset precise element coordinates for ground-truth labeling
+    # and lets us verify controls are actually reachable (not occluded, not off-screen).
+    w, h = image.size
+
+    # Caption / subtitles toggle
+    try:
+        caption_pt = await asyncio.wait_for(
+            analyzer.point_to(
+                image,
+                "the closed captions or subtitles button in the video player controls",
+            ),
+            timeout=45.0,
+        )
+        if caption_pt:
+            px, py = caption_pt
+            result["caption_button_xy"] = [round(px), round(py)]
+            # If we can point to a caption button, record it as evidence
+            if result["has_captions"] == "unknown":
+                result["has_captions"] = True
+    except (asyncio.TimeoutError, Exception):
+        pass
+
+    # Play / pause button
+    try:
+        pp_pt = await asyncio.wait_for(
+            analyzer.point_to(
+                image,
+                "the play or pause button in the video player controls",
+            ),
+            timeout=45.0,
+        )
+        if pp_pt:
+            px, py = pp_pt
+            result["playpause_button_xy"] = [round(px), round(py)]
+            # Verify it's within the viewport bounds (not off-screen)
+            if not (0 <= px <= w and 0 <= py <= h):
+                result["issues"].append({
+                    "wcag_criterion": "2.1.1",
+                    "severity": "major",
+                    "description": (
+                        "Play/pause button pointed to outside viewport bounds — "
+                        "may not be keyboard-reachable."
+                    ),
+                })
+    except (asyncio.TimeoutError, Exception):
+        pass
+
+    # If controls are absent per QA and pointing found nothing, flag 2.1.1
+    if result["has_controls"] is False and result["playpause_button_xy"] is None:
+        result["issues"].append({
+            "wcag_criterion": "2.1.1",
+            "severity": "major",
+            "description": (
+                "Video has no visible player controls. Keyboard users cannot "
+                "pause, stop, or control video playback (WCAG 2.1.1, 2.2.2)."
+            ),
+        })
+
+    return result
 
 
 # ── Low-level inference helper ────────────────────────────────────────────────
@@ -448,22 +521,33 @@ async def _run_vision_inference(
 
 async def capture_video_frames(page, run_dir: Path) -> list[tuple[bytes, dict]]:
     """
-    Find all <video> elements on the current page, capture a frame from each,
+    Find all <video> elements on the current page, capture frames from each,
     and return a list of (frame_bytes, video_metadata) tuples.
 
-    Metadata dict: { "src": str, "index": int, "width": int, "height": int,
-                     "autoplay": bool, "has_controls": bool, "has_track": bool }
+    For each video:
+      - Captures 3 frames spaced 200ms apart (at t=1s, 1.2s, 1.4s).
+      - Computes pixel-change rate between consecutive frames to estimate
+        motion intensity and flag potential photosensitive seizure risk
+        (WCAG 2.3.1: no content that flashes more than 3 times per second
+        occupying a large area of the screen).
+      - Returns the first frame for visual QA; stores motion metadata.
+
+    Metadata dict:
+      { "src", "index", "width", "height", "autoplay", "has_controls",
+        "has_track", "frame_path",
+        "motion_score": float,  # 0.0–1.0, fraction of pixels that changed >10%
+        "flicker_risk": bool }  # True if motion_score > 0.3 across 3 frames
     """
     video_infos: list[dict] = await page.evaluate("""() => {
         return Array.from(document.querySelectorAll('video')).map((v, i) => ({
-            index:       i,
-            src:         v.currentSrc || v.getAttribute('src') || '',
-            width:       Math.round(v.getBoundingClientRect().width),
-            height:      Math.round(v.getBoundingClientRect().height),
-            autoplay:    v.autoplay,
+            index:        i,
+            src:          v.currentSrc || v.getAttribute('src') || '',
+            width:        Math.round(v.getBoundingClientRect().width),
+            height:       Math.round(v.getBoundingClientRect().height),
+            autoplay:     v.autoplay,
             has_controls: v.controls,
-            has_track:   v.querySelectorAll('track[kind="captions"], track[kind="subtitles"]').length > 0,
-            visible:     v.getBoundingClientRect().width > 0,
+            has_track:    v.querySelectorAll('track[kind="captions"], track[kind="subtitles"]').length > 0,
+            visible:      v.getBoundingClientRect().width > 0,
         }));
     }""")
 
@@ -472,27 +556,99 @@ async def capture_video_frames(page, run_dir: Path) -> list[tuple[bytes, dict]]:
         if not info.get("visible") or info.get("width", 0) < 10:
             continue
         try:
-            # Seek to 1s into the video to get a non-black frame (best effort)
-            await page.evaluate(f"""() => {{
-                const v = document.querySelectorAll('video')[{info['index']}];
-                if (v) {{ try {{ v.currentTime = 1; }} catch(e) {{}} }}
-            }}""")
-            import asyncio as _asyncio
-            await _asyncio.sleep(0.3)
-
-            # Screenshot the video element directly
             video_locator = page.locator("video").nth(info["index"])
-            frame_bytes   = await video_locator.screenshot(timeout=5000)
+            multi_frames: list[bytes] = []
 
-            # Save frame to disk for eval dataset
+            # Capture 3 frames at 200ms intervals starting at t=1s
+            for t_offset in (1.0, 1.2, 1.4):
+                await page.evaluate(f"""() => {{
+                    const v = document.querySelectorAll('video')[{info['index']}];
+                    if (v) {{ try {{ v.currentTime = {t_offset}; }} catch(e) {{}} }}
+                }}""")
+                await asyncio.sleep(0.25)
+                try:
+                    fb = await video_locator.screenshot(timeout=5000)
+                    multi_frames.append(fb)
+                except Exception:
+                    break
+
+            if not multi_frames:
+                continue
+
+            first_frame = multi_frames[0]
+
+            # Save primary frame for eval dataset
             frame_path = run_dir / f"video_frame_{info['index']}.png"
-            frame_path.write_bytes(frame_bytes)
+            frame_path.write_bytes(first_frame)
             info["frame_path"] = str(frame_path)
-            frames.append((frame_bytes, info))
+
+            # ── Multi-frame flicker / motion analysis ─────────────────────────
+            # Compare consecutive frames pixel-by-pixel to estimate motion rate.
+            # High pixel-change rate across short intervals → flicker/seizure risk.
+            motion_score = 0.0
+            flicker_risk = False
+            if len(multi_frames) >= 2:
+                try:
+                    motion_score = _compute_motion_score(multi_frames)
+                    # Threshold: >30% pixels changed across 200ms ≈ very rapid motion
+                    flicker_risk = motion_score > 0.30
+                    if flicker_risk:
+                        print(
+                            f"[vision_analysis] Video {info['index']}: "
+                            f"flicker risk! motion_score={motion_score:.2f}"
+                        )
+                except Exception as e:
+                    print(f"[vision_analysis] Motion score error: {e}")
+
+            info["motion_score"] = round(motion_score, 3)
+            info["flicker_risk"] = flicker_risk
+
+            frames.append((first_frame, info))
+
         except Exception as e:
             print(f"[vision_analysis] Frame capture failed for video {info['index']}: {e}")
 
     return frames
+
+
+def _compute_motion_score(frame_bytes_list: list[bytes]) -> float:
+    """
+    Compute the fraction of pixels that changed significantly between
+    consecutive frames.  Returns a value in [0.0, 1.0].
+
+    Uses PIL only (no numpy dependency) — compares grayscale pixel values
+    with a threshold of 25/255 (~10%) per channel.
+    """
+    if len(frame_bytes_list) < 2:
+        return 0.0
+
+    total_changed = 0
+    total_comparisons = 0
+
+    prev_img = None
+    for fb in frame_bytes_list:
+        try:
+            img = Image.open(BytesIO(fb)).convert("L")  # grayscale
+            # Downsample for speed: max 200×150
+            img = img.resize((200, 150), Image.BILINEAR)
+        except Exception:
+            continue
+
+        if prev_img is not None and prev_img.size == img.size:
+            prev_pixels = list(prev_img.getdata())
+            curr_pixels = list(img.getdata())
+            n = len(prev_pixels)
+            changed = sum(
+                1 for p, c in zip(prev_pixels, curr_pixels) if abs(p - c) > 25
+            )
+            total_changed += changed
+            total_comparisons += n
+
+        prev_img = img
+
+    if total_comparisons == 0:
+        return 0.0
+    return total_changed / total_comparisons
 
 
 # ── Merge vision issues into page results ─────────────────────────────────────

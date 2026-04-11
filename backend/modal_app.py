@@ -3,9 +3,9 @@ MolmoAccess Agent — Modal Deployment
 
 GPU: A10G (24 GB VRAM)
 Models:
-  allenai/MolmoWeb-8B  — 4-bit NF4 → ~4 GB  (visual WCAG analysis)
-  allenai/OLMo-3-7B-Instruct — bfloat16 → ~14 GB  (narrative)
-  Total: ~18 GB — fits within A10G with expandable_segments enabled.
+  allenai/MolmoWeb-8B        — 4-bit NF4 → ~4 GB   (visual WCAG analysis)
+  allenai/OLMo-3-7B-Instruct — 4-bit NF4 → ~3.5 GB (narrative)
+  Total: ~7.5 GB static + ~2.5 GB activation headroom — well within A10G 24 GB.
 
 Cold-start time: ~45-60s (models baked into image via setup_models.py).
 Warm requests: ~2-5s per page.

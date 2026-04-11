@@ -34,20 +34,19 @@ class OLMo3Narrator:
         "4.1.1", "4.1.2", "4.1.3",
     }
 
-    def __init__(self, model_name: str = MODEL_NAME, use_quantization: bool = False):
+    def __init__(self, model_name: str = MODEL_NAME, use_quantization: bool = True):
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"[OLMo3] Loading {model_name} on {self.device}...")
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-        model_kwargs: dict = {
-            "torch_dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
-        }
+        model_kwargs: dict = {}
         if self.device == "cuda":
             model_kwargs["device_map"] = "auto"
-
-        if use_quantization and self.device == "cuda":
+            # 4-bit NF4 on CUDA: drops OLMo-3-7B from ~14 GB (bfloat16) to
+            # ~3.5 GB, keeping total VRAM (MolmoWeb ~4 GB + OLMo ~3.5 GB)
+            # well within the A10G 24 GB budget.
             from transformers import BitsAndBytesConfig
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -55,7 +54,8 @@ class OLMo3Narrator:
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
             )
-            model_kwargs.pop("torch_dtype", None)
+        else:
+            model_kwargs["torch_dtype"] = torch.float32
 
         self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
         if self.device == "cpu":

@@ -91,13 +91,7 @@ class ColorBlindnessTest(BaseWCAGTest):
     TEST_NAME = "Color-Blindness & Contrast Check"
     WCAG_CRITERIA = ["1.4.1", "1.4.3"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = (
-        "This screenshot has been processed through a deuteranopia (red-green color blindness) filter. "
-        "Look carefully for any interface elements — error states, status indicators, charts, buttons, "
-        "badges, or icons — that appear to use COLOR as the ONLY way to convey information. "
-        "For example: a red error border with no icon or text label; a green 'online' dot with no label. "
-        "List any elements that rely solely on color to communicate meaning, or say 'none found'."
-    )
+    MOLMO_QUESTION = "Is any information conveyed by color alone with no text or icon label? Answer yes or no."
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Capturing baseline screenshot...")

@@ -121,8 +121,8 @@ class KeyboardNavTest(BaseWCAGTest):
     WCAG_CRITERIA = ["2.1.1", "2.1.2", "2.4.1", "2.4.3"]
     DEFAULT_SEVERITY = "critical"
     MOLMO_QUESTION = (
-        "Is there a visible 'Skip to main content' or 'Skip navigation' link "
-        "near the top of this page? If yes, describe it. If no, say 'No skip link visible'."
+        "Is there a 'Skip to main content' or 'Skip navigation' link at the top of this page? "
+        "Answer yes or no."
     )
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:

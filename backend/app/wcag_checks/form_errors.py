@@ -34,12 +34,7 @@ class FormErrorTest(BaseWCAGTest):
     TEST_NAME = "Form Navigation & Error Handling"
     WCAG_CRITERIA = ["3.3.1", "3.3.2", "3.3.3", "3.3.4"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = (
-        "Look at this screenshot. Are there any form error messages or validation alerts visible? "
-        "If yes: are each error message clearly associated with the specific input field that caused it "
-        "(shown next to the field, or linked by an arrow/label)? "
-        "If no error messages are visible at all, say 'no error messages visible'."
-    )
+    MOLMO_QUESTION = "Are there any form error messages visible on this page? Answer yes or no."
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Scanning page for forms...")

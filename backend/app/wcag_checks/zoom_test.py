@@ -18,11 +18,7 @@ class ZoomTest(BaseWCAGTest):
     TEST_NAME = "Resize Text & Reflow"
     WCAG_CRITERIA = ["1.4.4", "1.4.10"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = (
-        "Does this screenshot show a webpage where content extends beyond the right "
-        "edge of the screen, requiring horizontal scrolling? Look for truncated text, "
-        "overflowing containers, or a horizontal scrollbar. Answer yes or no and briefly explain."
-    )
+    MOLMO_QUESTION = "Does any content extend past the right edge of the screen? Answer yes or no."
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Capturing baseline screenshot...")

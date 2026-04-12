@@ -234,14 +234,7 @@ class PageStructureTest(BaseWCAGTest):
     TEST_NAME = "Page Structure & Semantics"
     WCAG_CRITERIA = ["1.1.1", "1.3.1", "1.4.1", "2.2.2", "2.4.2", "2.4.4", "2.5.8", "3.1.1", "4.1.1", "4.1.2"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = (
-        "Describe the visual structure of this webpage screenshot. "
-        "1) What is the main heading (H1) if visible? "
-        "2) Are there clearly distinct sections like header, navigation, main content area, and footer? "
-        "3) Is the heading hierarchy logical (H1 → H2 → H3)? "
-        "4) Are navigation menus labeled or visually identifiable? "
-        "Give a brief structured answer."
-    )
+    MOLMO_QUESTION = "Is there a visible main heading near the top of this page? Answer yes or no."
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Running structural checks (alt text, headings, lang, links, ARIA)...")

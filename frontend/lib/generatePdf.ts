@@ -504,6 +504,14 @@ export function generatePdf(report: Record<string, unknown>): void {
   }
 
   // ── Download ──────────────────────────────────────────────────────────────────
-  const slug = (r.run_id ?? "report").slice(0, 8);
-  doc.save(`pointcheck-${slug}.pdf`);
+  // Filename: domainmmddyyyy  e.g. weinsteinau_04112026
+  const hostname = (() => {
+    try { return new URL(r.url).hostname; } catch { return r.url ?? "report"; }
+  })();
+  const domainNoTld = hostname.replace(/^www\./, "").replace(/\.[^.]+$/, "");
+  const d = r.generated_at ? new Date(r.generated_at) : new Date();
+  const mm   = String(d.getMonth() + 1).padStart(2, "0");
+  const dd   = String(d.getDate()).padStart(2, "0");
+  const yyyy = String(d.getFullYear());
+  doc.save(`${domainNoTld}_${mm}${dd}${yyyy}.pdf`);
 }

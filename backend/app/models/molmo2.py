@@ -23,7 +23,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import traceback
 from io import BytesIO
 import base64
 from pathlib import Path
@@ -36,7 +35,6 @@ from transformers import (
     AutoProcessor,
     LogitsProcessor,
     LogitsProcessorList,
-    BitsAndBytesConfig,
 )
 
 
@@ -69,7 +67,7 @@ class ConsecutiveNewlineSuppressor(LogitsProcessor):
 
 class MolmoWebAnalyzer:
     """
-    Thin inference wrapper around allenai/MolmoWeb-8B (or MolmoWeb-4B fallback).
+    Thin inference wrapper around allenai/MolmoWeb-8B.
 
     Exposes three async methods:
       analyze(screenshot, question)   → plain-text answer  (QA mode)
@@ -77,7 +75,8 @@ class MolmoWebAnalyzer:
       screenshot_to_image(page)       → PIL.Image           (util)
 
     Both modes run in a thread executor so they never block the event loop.
-    4-bit NF4 quantization is applied on CUDA to stay within A10G 24GB.
+    Loaded in bfloat16 (~16 GB on CUDA). MolmoWeb and OLMo are never resident
+    simultaneously — caller must free this object before loading OLMo.
     """
 
     MODEL_NAME = "allenai/MolmoWeb-8B"
@@ -86,7 +85,7 @@ class MolmoWebAnalyzer:
     def __init__(
         self,
         model_name: str = MODEL_NAME,
-        use_quantization: bool = True,
+        use_quantization: bool = False,  # unused; kept for call-site compat
     ):
         self.model_name = model_name
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -126,39 +125,10 @@ class MolmoWebAnalyzer:
         self.model_dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
         model_kwargs: dict = {
             "trust_remote_code": True,
+            "dtype": self.model_dtype,
         }
-
         if self.device == "cuda":
-            # 8-bit LLM.int8() quantization for MolmoWeb-8B.
-            #
-            # Why not 4-bit NF4?
-            #   bitsandbytes 4-bit uses lazy quantization: on the first forward
-            #   pass it does `Params4bit.data = uint8_tensor`. With
-            #   requires_grad=True this raises "data set to a tensor that requires
-            #   gradients must be floating point". Calling requires_grad_(False)
-            #   to work around it causes vision_backbone to return raw uint8
-            #   activations (LayerNormKernelImpl not implemented for 'Byte').
-            #   No BitsAndBytesConfig skip_modules parameter reliably excludes
-            #   sub-modules from 4-bit replacement in Transformers 5.x.
-            #
-            # Why 8-bit works:
-            #   Linear8bitLt stores original fp16 weights in self.weight.data
-            #   and quantized int8 in self.state.CB separately — no requires_grad
-            #   conflict. llm_int8_skip_modules=["vision_backbone"] is properly
-            #   wired in the 8-bit replacement pipeline, keeping the SigLIP ViT
-            #   in bfloat16 (~0.6 GB overhead).
-            #
-            # Memory: ~8 GB MolmoWeb (8-bit LM + bf16 vision) + ~3.5 GB OLMo
-            # (4-bit NF4) = ~11.5 GB static, 10.5 GB headroom on A10G 24 GB.
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_8bit=True,
-                llm_int8_skip_modules=["vision_backbone"],
-                llm_int8_threshold=6.0,
-                llm_int8_has_fp16_weight=False,
-            )
             model_kwargs["device_map"] = "auto"
-        else:
-            model_kwargs["torch_dtype"] = self.model_dtype
 
         self.model = AutoModelForImageTextToText.from_pretrained(
             model_name, **model_kwargs
@@ -290,25 +260,14 @@ class MolmoWebAnalyzer:
         }
         input_len = inputs["input_ids"].shape[1]
 
-        # Debug: log all input tensor dtypes so we can trace dtype-mismatch errors
-        for k, v in inputs.items():
-            if isinstance(v, torch.Tensor):
-                print(f"[MolmoWeb input] {k}: shape={v.shape} dtype={v.dtype} device={v.device}")
-
-        # bitsandbytes handles dtype internally via bnb_4bit_compute_dtype;
-        # use torch.inference_mode() alone (no torch.autocast).
-        try:
-            with torch.inference_mode():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=False,
-                    logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
-                )
-        except Exception:
-            print("[MolmoWeb] _run_inference FAILED — full traceback:")
-            traceback.print_exc()
-            raise
+        with torch.inference_mode():
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                no_repeat_ngram_size=3,
+                logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
+            )
 
         new_tokens = outputs[0][input_len:]
         return self.processor.decode(new_tokens, skip_special_tokens=True).strip()

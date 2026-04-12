@@ -176,13 +176,7 @@ class VideoMotionTest(BaseWCAGTest):
     TEST_NAME = "Video, Audio & Motion"
     WCAG_CRITERIA = ["1.2.1", "1.2.2", "2.2.2", "2.3.1"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = (
-        "Look at this webpage screenshot. "
-        "1) Can you see any videos, carousels, sliders, animations, or auto-playing content? "
-        "2) If yes, are there visible PAUSE, STOP, or PLAY/PAUSE controls for each? "
-        "3) Is there any content that appears to be flashing or blinking rapidly? "
-        "Answer each numbered question briefly."
-    )
+    MOLMO_QUESTION = "Is there any auto-playing video or animation without a visible pause or stop button? Answer yes or no."
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Scanning for video, audio, and animated content...")

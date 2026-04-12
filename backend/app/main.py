@@ -20,10 +20,10 @@ WebSocket event types emitted (backward-compatible with PointCheck v1 frontend):
   done            — final report (screenshot_b64 stripped)
   error           — fatal error
 
-Models are loaded lazily on first WS connection and cached globally.
+Models are loaded sequentially within each scan — never both resident at once.
 On Modal A10G (24GB VRAM):
-  MolmoWeb-8B  4-bit NF4  ~4GB
-  OLMo 3       bfloat16   ~14GB  (or 4-bit ~4GB)
+  Phase 1 (visual checks): MolmoWeb-8B bfloat16 ~16GB, OLMo not loaded
+  Phase 2 (narrative):     MolmoWeb freed, OLMo-3-7B 4-bit NF4 ~3.5GB
 """
 
 from __future__ import annotations
@@ -63,29 +63,11 @@ SCREENSHOTS_DIR.mkdir(exist_ok=True)
 app.mount("/screenshots", StaticFiles(directory=str(SCREENSHOTS_DIR)), name="screenshots")
 
 
-# ── Global model singletons (lazy-loaded on first WS connection) ───────────────
-
-_analyzer: Optional[MolmoWebAnalyzer] = None
-_narrator: Optional[OLMo3Narrator]    = None
-_model_lock = asyncio.Lock()
-
 # In-memory job store (replace with Redis/DB for production)
 _jobs: dict[str, CrawlJobState] = {}
 
-
-async def _ensure_models() -> tuple[MolmoWebAnalyzer, OLMo3Narrator]:
-    """Load both models once and cache globally. Thread-safe via asyncio.Lock."""
-    global _analyzer, _narrator
-    async with _model_lock:
-        if _analyzer is None:
-            _analyzer = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: MolmoWebAnalyzer(use_quantization=True)
-            )
-        if _narrator is None:
-            _narrator = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: OLMo3Narrator()
-            )
-    return _analyzer, _narrator
+# Serialise scans so only one model-load phase runs at a time
+_scan_lock = asyncio.Lock()
 
 
 # ── REST endpoints ─────────────────────────────────────────────────────────────
@@ -94,7 +76,6 @@ async def _ensure_models() -> tuple[MolmoWebAnalyzer, OLMo3Narrator]:
 async def health():
     return {
         "status": "ok",
-        "models_loaded": _analyzer is not None and _narrator is not None,
         "jobs": len(_jobs),
     }
 
@@ -165,78 +146,85 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             pass
 
     try:
-        # ── Load models ───────────────────────────────────────────────────
-        await send({"type": "status", "message": "Loading MolmoWeb-8B (visual analyzer)..."})
-        analyzer, narrator = await _ensure_models()
-        await send({"type": "status", "message": "Models ready. Starting crawler..."})
+        async with _scan_lock:
+            loop = asyncio.get_event_loop()
 
-        # ── Set up directories ────────────────────────────────────────────
-        job_screenshots = SCREENSHOTS_DIR / job_id
-        job_screenshots.mkdir(exist_ok=True)
+            # ── Phase 1: MolmoWeb-8B bfloat16 (~16 GB) ───────────────────────
+            # OLMo is NOT loaded. MolmoWeb alone fits in A10G 24 GB.
+            await send({"type": "status", "message": "Loading MolmoWeb-8B (visual analyzer)..."})
+            analyzer = await loop.run_in_executor(
+                None, lambda: MolmoWebAnalyzer(use_quantization=False)
+            )
+            await send({"type": "status", "message": "MolmoWeb-8B ready. Starting visual checks..."})
 
-        # ── Eval logger ───────────────────────────────────────────────────
-        eval_logger = EvalLogger(job_id=job_id)
+            job_screenshots = SCREENSHOTS_DIR / job_id
+            job_screenshots.mkdir(exist_ok=True)
+            eval_logger = EvalLogger(job_id=job_id)
 
-        # ── BFS crawl ─────────────────────────────────────────────────────
-        crawler = SiteCrawler(
-            start_url=job.url,
-            analyzer=analyzer,
-            screenshots_dir=job_screenshots,
-            wcag_version=job.wcag_version,
-            max_pages=job.max_pages,
-            max_depth=job.max_depth,
-            tests=job.tests,
-            eval_logger=eval_logger,
-        )
+            crawler = SiteCrawler(
+                start_url=job.url,
+                analyzer=analyzer,
+                screenshots_dir=job_screenshots,
+                wcag_version=job.wcag_version,
+                max_pages=job.max_pages,
+                max_depth=job.max_depth,
+                tests=job.tests,
+                eval_logger=eval_logger,
+            )
 
-        page_reports: list[dict] = []
+            page_reports: list[dict] = []
 
-        async for event in crawler.crawl():
-            if event["type"] == "crawl_done":
-                page_reports = event["page_reports"]
-                job.pages_scanned = event["pages_scanned"]
-                # Don't forward raw crawl_done — we send `done` instead
-                continue
+            async for event in crawler.crawl():
+                if event["type"] == "crawl_done":
+                    page_reports = event["page_reports"]
+                    job.pages_scanned = event["pages_scanned"]
+                    continue
+                if event["type"] == "page_done":
+                    job.pages_scanned += 1
+                    page_reports.append(event["page_report"])
+                    await send({**event, "page_report": strip_b64(event["page_report"])})
+                    continue
+                if event["type"] == "result":
+                    job.page_results.append(event["data"])
+                    await send(event)
+                    continue
+                await send(event)
 
-            if event["type"] == "page_done":
-                job.pages_scanned += 1
-                page_reports.append(event["page_report"])
-                # Forward page_done without b64 to keep frames small
-                await send({**event, "page_report": strip_b64(event["page_report"])})
-                continue
+            eval_logger.close()
 
-            if event["type"] == "result":
-                job.page_results.append(event["data"])
-                await send(event)  # individual results include b64
-                continue
+            # ── Free MolmoWeb, then load OLMo ────────────────────────────────
+            # Sequential residency — never both models in VRAM at once.
+            del crawler, analyzer
+            import torch as _torch
+            if _torch.cuda.is_available():
+                _torch.cuda.empty_cache()
+            await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
 
-            await send(event)
+            # ── Phase 2: OLMo 4-bit NF4 (~3.5 GB) ───────────────────────────
+            narrator = await loop.run_in_executor(None, OLMo3Narrator)
+            narrative = await narrator.generate_narrative(
+                all_results=job.page_results,
+                site_url=job.url,
+                pages_scanned=job.pages_scanned,
+            )
+            del narrator
+            if _torch.cuda.is_available():
+                _torch.cuda.empty_cache()
+            job.narrative = narrative
 
-        eval_logger.close()
-
-        # ── Narrative ─────────────────────────────────────────────────────
-        await send({"type": "status", "message": "Generating accessibility narrative with OLMo 3..."})
-        narrative = await narrator.generate_narrative(
-            all_results=job.page_results,
-            site_url=job.url,
-            pages_scanned=job.pages_scanned,
-        )
-        job.narrative = narrative
-
-        # ── Final report ──────────────────────────────────────────────────
-        report = build_site_report(
-            job_id=job_id,
-            site_url=job.url,
-            wcag_version=job.wcag_version,
-            narrative=narrative,
-            page_reports=page_reports,
-            tests_run=job.tests,
-        )
-        job.report = report
-        job.status = "complete"
-        job.completed_at = datetime.utcnow().isoformat()
-
-        await send({"type": "done", "job_id": job_id, "report": strip_b64(report)})
+            # ── Final report ──────────────────────────────────────────────────
+            report = build_site_report(
+                job_id=job_id,
+                site_url=job.url,
+                wcag_version=job.wcag_version,
+                narrative=narrative,
+                page_reports=page_reports,
+                tests_run=job.tests,
+            )
+            job.report = report
+            job.status = "complete"
+            job.completed_at = datetime.utcnow().isoformat()
+            await send({"type": "done", "job_id": job_id, "report": strip_b64(report)})
 
     except WebSocketDisconnect:
         job.status = "disconnected"

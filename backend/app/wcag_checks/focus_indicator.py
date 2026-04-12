@@ -122,15 +122,10 @@ class FocusIndicatorTest(BaseWCAGTest):
                     f"CSS outline found on {el_desc} — MolmoWeb visual confirmation "
                     f"({molmo_calls}/{MAX_MOLMO_CALLS})..."
                 )
-                question = (
-                    f"Can you see a keyboard focus indicator (outline, ring, or highlight) "
-                    f"around the element that currently has focus? "
-                    f"The element is described as: {el_desc}. "
-                    "Describe what you see, or point to it."
-                )
+                question = f"Is there a visible focus outline or ring around {el_desc}? Answer yes or no."
                 try:
                     point = await asyncio.wait_for(
-                        self.analyzer.point_to(screenshot, f"the element with keyboard focus: {el_desc}"),
+                        self.analyzer.point_to(screenshot, f"focus indicator on {el_desc}"),
                         timeout=self.MOLMO_TIMEOUT,
                     )
                     molmo_raw = await asyncio.wait_for(

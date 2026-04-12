@@ -46,33 +46,24 @@ def apply_molmo2_patches():
 
 
 def download_molmoweb():
-    from transformers import AutoProcessor, AutoModelForImageTextToText, BitsAndBytesConfig
+    from transformers import AutoProcessor, AutoModelForImageTextToText
 
     model_name = "allenai/MolmoWeb-8B"
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype = torch.bfloat16 if device == "cuda" else torch.float32
     print(f"[setup] Downloading {model_name} on {device}...")
 
     apply_molmo2_patches()
 
-    processor = AutoProcessor.from_pretrained(
-        model_name, trust_remote_code=True, padding_side="left"
-    )
+    AutoProcessor.from_pretrained(model_name, trust_remote_code=True, padding_side="left")
 
-    model_kwargs: dict = {"trust_remote_code": True}
+    model_kwargs: dict = {"trust_remote_code": True, "dtype": dtype}
     if device == "cuda":
-        model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_8bit=True,
-            llm_int8_skip_modules=["vision_backbone"],
-            llm_int8_threshold=6.0,
-            llm_int8_has_fp16_weight=False,
-        )
         model_kwargs["device_map"] = "auto"
-    else:
-        model_kwargs["torch_dtype"] = torch.float32
 
     model = AutoModelForImageTextToText.from_pretrained(model_name, **model_kwargs)
 
-    # Apply cache_position patch (patch 3)
+    # Apply cache_position patch (patch 3) so the baked image has it
     _orig_prepare = model.prepare_inputs_for_generation
     def _patched_prepare(input_ids, past_key_values=None, cache_position=None, **kw):
         if cache_position is None:
@@ -91,26 +82,37 @@ def download_molmoweb():
         return _orig_prepare(input_ids, past_key_values=past_key_values, cache_position=cache_position, **kw)
     model.prepare_inputs_for_generation = _patched_prepare
     print("[setup] cache_position patch applied")
-
     print(f"[setup] {model_name} ready")
+
+    # Free VRAM immediately — OLMo will be downloaded next and they must not
+    # coexist in memory (MolmoWeb bf16 ~16 GB + OLMo bf16 ~14 GB > 24 GB).
+    del model
+    if device == "cuda":
+        torch.cuda.empty_cache()
 
 
 def download_olmo3():
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
     model_name = "allenai/OLMo-3-7B-Instruct"
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[setup] Downloading {model_name} on {device}...")
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    AutoTokenizer.from_pretrained(model_name)
 
-    model_kwargs: dict = {
-        "torch_dtype": torch.bfloat16 if device == "cuda" else torch.float32,
-    }
+    model_kwargs: dict = {}
     if device == "cuda":
         model_kwargs["device_map"] = "auto"
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+    else:
+        model_kwargs["torch_dtype"] = torch.float32
 
-    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
     print(f"[setup] {model_name} ready")
 
 

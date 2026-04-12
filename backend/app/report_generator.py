@@ -99,16 +99,13 @@ def build_page_report(
     """
     Build a single-page sub-report. Mirrors the existing PointCheck report
     shape so the frontend's existing rendering code works unchanged.
+
+    Summary counts are derived from test_summaries (one entry per test in
+    tests_run) so the count boxes always match the displayed test cards.
+    raw_results retains the full merged result list for detailed analysis.
     """
-    passed   = [r for r in results if r.get("result") == "pass"]
-    failed   = [r for r in results if r.get("result") == "fail"]
-    warnings = [r for r in results if r.get("result") == "warning"]
-    errors   = [r for r in results if r.get("result") == "error"]
-
-    sorted_failures = sorted(
-        failed, key=lambda r: SEVERITY_ORDER.get(r.get("severity", "minor"), 3)
-    )
-
+    # Build test_summaries first — one entry per test_id in tests_run,
+    # picking the programmatic result (results are ordered programmatic-first).
     test_summaries = []
     for test_id in tests_run:
         r = next((x for x in results if x.get("test_id") == test_id), None)
@@ -126,22 +123,47 @@ def build_page_report(
             "molmo_analysis":  r.get("molmo_analysis", "") if r else "",
         })
 
+    # Compute summary counts from test_summaries so they match the cards shown
+    # in the UI and PDF.  raw_results keeps the full merged list for detailed
+    # failure info and the top-criteria chart.
+    ts_passed   = sum(1 for ts in test_summaries if ts["result"] == "pass")
+    ts_failed   = sum(1 for ts in test_summaries if ts["result"] == "fail")
+    ts_warnings = sum(1 for ts in test_summaries if ts["result"] == "warning")
+    ts_errors   = sum(1 for ts in test_summaries if ts["result"] == "error")
+    ts_total    = len(test_summaries)
+
+    ts_fail_entries = [ts for ts in test_summaries if ts["result"] == "fail"]
+    if not ts_fail_entries:
+        overall = "compliant"
+    elif any(ts.get("severity") == "critical" for ts in ts_fail_entries):
+        overall = "critical_issues"
+    else:
+        overall = "issues_found"
+
+    compliance = round((ts_passed + ts_warnings) / ts_total * 100, 1) if ts_total else 0.0
+
+    # Keep full raw results for sorted_failures / top_criteria (need severity detail)
+    all_raw_failures = sorted(
+        [r for r in results if r.get("result") == "fail"],
+        key=lambda r: SEVERITY_ORDER.get(r.get("severity", "minor"), 3),
+    )
+
     return {
         "page_url":            page_url,
         "depth":               depth,
-        "overall_status":      _overall_status(results),
-        "compliance_percentage": _compliance_pct(results),
+        "overall_status":      overall,
+        "compliance_percentage": compliance,
         "summary": {
-            "total_tests": len(results),
-            "passed":    len(passed),
-            "failed":    len(failed),
-            "warnings":  len(warnings),
-            "errors":    len(errors),
+            "total_tests": ts_total,
+            "passed":    ts_passed,
+            "failed":    ts_failed,
+            "warnings":  ts_warnings,
+            "errors":    ts_errors,
         },
         "top_criteria_failures": _top_criteria(results),
         "test_summaries":   test_summaries,
-        "critical_failures": [r for r in sorted_failures if r.get("severity") == "critical"],
-        "all_failures":     sorted_failures,
+        "critical_failures": [r for r in all_raw_failures if r.get("severity") == "critical"],
+        "all_failures":     all_raw_failures,
         "raw_results":      results,
         "screenshot_path":  screenshot_path,
     }
@@ -203,12 +225,29 @@ def build_site_report(
             "pages_total":  len(page_reports),
         })
 
-    passed   = [r for r in all_results if r.get("result") == "pass"]
-    failed   = [r for r in all_results if r.get("result") == "fail"]
-    warnings = [r for r in all_results if r.get("result") == "warning"]
-    errors   = [r for r in all_results if r.get("result") == "error"]
+    # Compute summary counts from agg_summaries (one entry per test_id) so
+    # the count boxes shown in the UI/PDF always match the test cards.
+    # all_results is still used for top_criteria_failures and all_failures
+    # which need the full per-page detail.
+    agg_passed   = sum(1 for ts in agg_summaries if ts.get("result") == "pass")
+    agg_failed   = sum(1 for ts in agg_summaries if ts.get("result") == "fail")
+    agg_warnings = sum(1 for ts in agg_summaries if ts.get("result") == "warning")
+    agg_errors   = sum(1 for ts in agg_summaries if ts.get("result") == "error")
+    agg_total    = len(agg_summaries)
+
+    agg_fail_entries = [ts for ts in agg_summaries if ts.get("result") == "fail"]
+    if not agg_fail_entries:
+        overall = "compliant"
+    elif any(ts.get("severity") == "critical" for ts in agg_fail_entries):
+        overall = "critical_issues"
+    else:
+        overall = "issues_found"
+
+    compliance = round((agg_passed + agg_warnings) / agg_total * 100, 1) if agg_total else 0.0
+
     sorted_failures = sorted(
-        failed, key=lambda r: SEVERITY_ORDER.get(r.get("severity", "minor"), 3)
+        [r for r in all_results if r.get("result") == "fail"],
+        key=lambda r: SEVERITY_ORDER.get(r.get("severity", "minor"), 3),
     )
 
     return {
@@ -218,15 +257,15 @@ def build_site_report(
         "wcag_version":        wcag_version,
         "generated_at":        datetime.utcnow().isoformat(),
         "narrative":           narrative,
-        "overall_status":      _overall_status(all_results),
-        "compliance_percentage": _compliance_pct(all_results),
+        "overall_status":      overall,
+        "compliance_percentage": compliance,
         "pages_scanned":       len(page_reports),
         "summary": {
-            "total_tests": len(all_results),
-            "passed":    len(passed),
-            "failed":    len(failed),
-            "warnings":  len(warnings),
-            "errors":    len(errors),
+            "total_tests": agg_total,
+            "passed":    agg_passed,
+            "failed":    agg_failed,
+            "warnings":  agg_warnings,
+            "errors":    agg_errors,
         },
         "top_criteria_failures": _top_criteria(all_results),
         "test_summaries":   agg_summaries,

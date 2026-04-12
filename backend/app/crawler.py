@@ -87,58 +87,74 @@ async def _dismiss_overlays(page: Page) -> None:
       3. Post-dismiss sleep lets CSS overlay animations finish so they don't
          appear as artifacts in screenshots.
     """
-    # JS text scan: matches accept/close/dismiss labels for any overlay type.
-    # el.click() bypasses Playwright actionability checks (handles partially
-    # obscured buttons mid-animation). We click up to 3 overlays per page
-    # (e.g. cookie banner + newsletter popup).
-    dismissed = await page.evaluate("""() => {
+    # JS text scan with retry loop — banner may load after domcontentloaded.
+    # Uses dispatchEvent (not just el.click) so consent SDKs register the click.
+    # Searches whole document including common overlay containers.
+    _JS_DISMISS = """() => {
         const ACCEPT_RE = /^(accept|agree|allow|ok|got it|i agree|i accept|consent|continue|close|dismiss|no thanks|maybe later|understood|sure|yes|×|✕)/i;
-        const REJECT_RE = /^(reject all|decline all)/i;  // avoid these — they may block content
-        const candidates = Array.from(document.querySelectorAll(
-            'button, [role="button"], a[href="#"], a[href=""], ' +
-            'input[type="button"], input[type="submit"], [aria-label*="close" i], ' +
-            '[aria-label*="dismiss" i], [aria-label*="accept" i]'
-        ));
-        let count = 0;
-        for (const el of candidates) {
-            if (count >= 3) break;
-            const label = (
-                el.textContent || el.value ||
-                el.getAttribute('aria-label') || ''
-            ).trim();
-            if (
-                label.length > 0 && label.length < 80 &&
-                ACCEPT_RE.test(label) && !REJECT_RE.test(label)
-            ) {
-                const r = el.getBoundingClientRect();
-                if (r.width > 0 && r.height > 0) {
-                    el.click();
-                    count++;
+        const REJECT_RE = /^(reject all|decline all|refuse)/i;
+        function tryClick(root) {
+            const candidates = Array.from(root.querySelectorAll(
+                'button, [role="button"], a[href="#"], a[href=""], ' +
+                'input[type="button"], input[type="submit"], ' +
+                '[aria-label*="close" i], [aria-label*="dismiss" i], [aria-label*="accept" i]'
+            ));
+            for (const el of candidates) {
+                const label = (
+                    el.textContent || el.value ||
+                    el.getAttribute('aria-label') || ''
+                ).trim().replace(/\\s+/g, ' ');
+                if (label.length > 0 && label.length < 80 &&
+                    ACCEPT_RE.test(label) && !REJECT_RE.test(label)) {
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0) {
+                        el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true}));
+                        el.click();
+                        return label.slice(0, 40);
+                    }
                 }
             }
+            return null;
         }
-        return count;
-    }""")
+        // Search main document
+        const result = tryClick(document);
+        if (result) return result;
+        // Search inside iframes (same-origin only)
+        for (const iframe of document.querySelectorAll('iframe')) {
+            try {
+                const doc = iframe.contentDocument || iframe.contentWindow.document;
+                if (doc) {
+                    const r = tryClick(doc);
+                    if (r) return 'iframe:' + r;
+                }
+            } catch(e) {}
+        }
+        return null;
+    }"""
 
-    if dismissed:
-        # Wait for overlay exit animations to complete before any screenshot
-        await asyncio.sleep(0.7)
-        return
+    for attempt in range(3):
+        try:
+            dismissed = await page.evaluate(_JS_DISMISS)
+        except Exception:
+            dismissed = None
+        if dismissed:
+            print(f"[overlay] dismissed: {dismissed!r}")
+            await asyncio.sleep(0.8)  # let exit animation finish
+            return
+        if attempt < 2:
+            await asyncio.sleep(1.2)  # wait for lazily-injected banners
 
-    # Fallback: Playwright selectors for known CMPs in iframes/shadow roots
+    # Final fallback: Playwright selectors for shadow-root CMPs
     pw_selectors = [
         "#onetrust-accept-btn-handler",
         "#accept-cookies",
         "[data-testid='accept-button']",
         "[data-cookiebanner='accept_button']",
-        "iframe[src*='consent'] >> button",
-        "iframe[id*='cookie'] >> button",
-        "iframe[src*='popup'] >> button",
     ]
     for sel in pw_selectors:
         try:
-            await page.click(sel, timeout=600)
-            await asyncio.sleep(0.7)
+            await page.click(sel, timeout=800)
+            await asyncio.sleep(0.8)
             return
         except Exception:
             continue

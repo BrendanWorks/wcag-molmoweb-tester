@@ -69,6 +69,34 @@ class BaseWCAGTest:
         """
         raise NotImplementedError
 
+    async def _probe_agent_capable(self, page) -> bool:
+        """
+        Quick capability probe: ask MolmoWeb for one action and check whether
+        the output is a parseable action call or trajectory gibberish.
+        Returns False if MolmoWeb is in trajectory mode (numbered lists,
+        coordinates without context) — callers should skip agent loops.
+        """
+        if self.analyzer is None:
+            return False
+        import asyncio
+        try:
+            screenshot = await self.analyzer.screenshot_to_image(page)
+            raw = await asyncio.wait_for(
+                self.analyzer.analyze_raw(
+                    screenshot,
+                    "Task: Check if this page has loaded.\nPrevious actions: none\n"
+                    "Choose ONE action. x and y coordinates are 0-100:\n"
+                    "  done(\"reason\")\n  mouse_click(x, y)\nAction:",
+                    max_new_tokens=30,
+                ),
+                timeout=20.0,
+            )
+            # Parseable if it contains a known action keyword
+            lower = raw.strip().lower()
+            return any(kw in lower for kw in ("done(", "mouse_click(", "key_press(", "mouse_scroll(", "type_text("))
+        except Exception:
+            return False
+
     async def _molmo_analyze(self, screenshot, question: str) -> str:
         """
         Run MolmoWeb-8B visual QA with a per-call timeout guard.

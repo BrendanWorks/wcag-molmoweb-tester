@@ -206,15 +206,23 @@ async def ws_crawl(ws: WebSocket, job_id: str):
             await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
 
             # ── Phase 2: OLMo 4-bit NF4 (~3.5 GB) ───────────────────────────
-            narrator = await loop.run_in_executor(None, OLMo3Narrator)
-            narrative = await narrator.generate_narrative(
-                all_results=job.page_results,
-                site_url=job.url,
-                pages_scanned=job.pages_scanned,
-            )
-            del narrator
-            if _torch.cuda.is_available():
-                _torch.cuda.empty_cache()
+            # Wrapped in try/except — if OLMo fails to load (e.g. fragmented
+            # VRAM on a warm container), we still deliver a complete report
+            # with the visual check results. The narrative is best-effort.
+            narrative = ""
+            try:
+                narrator = await loop.run_in_executor(None, OLMo3Narrator)
+                narrative = await narrator.generate_narrative(
+                    all_results=job.page_results,
+                    site_url=job.url,
+                    pages_scanned=job.pages_scanned,
+                )
+                del narrator
+                if _torch.cuda.is_available():
+                    _torch.cuda.empty_cache()
+            except Exception as _olmo_err:
+                print(f"[OLMo3] Load/generate failed (non-fatal): {_olmo_err}")
+                await send({"type": "status", "message": "Narrative generation unavailable — delivering visual results."})
             job.narrative = narrative
 
             # ── Final report ──────────────────────────────────────────────────

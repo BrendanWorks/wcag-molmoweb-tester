@@ -193,11 +193,7 @@ class Molmo2Pointer:
             }
             input_len = inputs["input_ids"].shape[1]
 
-            autocast_ctx = (
-                torch.autocast("cuda", dtype=torch.bfloat16)
-                if self.device == "cuda" else torch.no_grad()
-            )
-            with torch.inference_mode(), autocast_ctx:
+            with torch.inference_mode():
                 outputs = self.model.generate(
                     **inputs,
                     max_new_tokens=80,
@@ -261,7 +257,7 @@ class WCAGAgent:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         model_kwargs: dict = {
-            "torch_dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
+            "dtype": torch.bfloat16 if self.device == "cuda" else torch.float32,
             "device_map": "auto" if self.device == "cuda" else None,
         }
         if use_quantization and self.device == "cuda":

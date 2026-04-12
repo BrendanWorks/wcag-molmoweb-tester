@@ -2,12 +2,11 @@
 PointCheck — Modal Deployment
 
 Two-model architecture:
-  allenai/Olmo-3-7B-Instruct        — executive summary narrative (text)
-  allenai/Molmo2-4B                 — visual pointer for focus confirmation (vision)
+  allenai/MolmoWeb-8B  — visual WCAG analysis (7 yes/no checks per page, bfloat16)
+  allenai/OLMo-3-7B    — executive summary narrative (4-bit NF4, loaded after MolmoWeb freed)
 
-Five WCAG tests run fully programmatically via Playwright.
-Molmo2's pixel-coordinate pointing confirms focus indicator visibility
-beyond what CSS inspection alone can detect.
+BFS site crawl via Playwright. MolmoWeb and OLMo never resident simultaneously on A10G.
+Entrypoint: backend/app/main.py (FastAPI + WebSocket streaming).
 """
 
 import modal
@@ -35,7 +34,7 @@ image = (
     )
     .run_commands("playwright install chromium && playwright install-deps")
     .add_local_dir("backend", remote_path="/app", copy=True)
-    .run_commands("cd /app && python setup_model.py", gpu="any")
+    .run_commands("cd /app/app && python setup_models.py", gpu="any")
 )
 
 
@@ -76,5 +75,5 @@ def web():
         return _orig(self, *a, **clean)
     _pu.ProcessorMixin.__init__ = _lenient
 
-    from main import app as fastapi_app
+    from app.main import app as fastapi_app
     return fastapi_app

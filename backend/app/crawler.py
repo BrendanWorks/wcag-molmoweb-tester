@@ -71,6 +71,53 @@ TEST_MAP: dict[str, type[BaseWCAGTest]] = {
 # Delay between page requests (ms) to avoid hammering servers
 _INTER_PAGE_DELAY_MS = 800
 
+
+# ── Cookie consent dismissal ──────────────────────────────────────────────────
+
+async def _dismiss_cookie_consent(page: Page) -> None:
+    """
+    Try common cookie/GDPR consent patterns and click Accept if found.
+    Tries each selector with a short timeout — silently skips if not present.
+    Called after every page.goto() so MolmoWeb sees the real page content.
+    """
+    selectors = [
+        # Text-based buttons (most reliable)
+        "button:has-text('Accept all')",
+        "button:has-text('Accept All')",
+        "button:has-text('Accept cookies')",
+        "button:has-text('Accept Cookies')",
+        "button:has-text('Accept')",
+        "button:has-text('Agree')",
+        "button:has-text('OK')",
+        "button:has-text('Got it')",
+        "button:has-text('I agree')",
+        "button:has-text('Allow all')",
+        "button:has-text('Allow All')",
+        "button:has-text('Continue')",
+        # ID/class pattern matches
+        "#onetrust-accept-btn-handler",
+        "#accept-cookies",
+        "#cookie-accept",
+        "[id*='cookie'] button[class*='accept']",
+        "[id*='cookie'] button[class*='agree']",
+        "[id*='consent'] button[class*='accept']",
+        "[id*='consent'] button[class*='agree']",
+        "[class*='cookie-banner'] button",
+        "[class*='cookie-notice'] button",
+        "[class*='gdpr'] button[class*='accept']",
+        # Aria-label patterns
+        "[aria-label*='Accept']",
+        "[aria-label*='accept cookies']",
+        "[aria-label*='cookie']",
+    ]
+    for sel in selectors:
+        try:
+            await page.click(sel, timeout=800)
+            await asyncio.sleep(0.4)
+            return  # stop after first successful dismiss
+        except Exception:
+            continue
+
 # Extensions to skip — not meaningful HTML pages
 _SKIP_EXTENSIONS = {
     ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
@@ -169,6 +216,7 @@ async def _scan_page(
     try:
         await page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
         await asyncio.sleep(1.5)  # let JS-heavy SPAs settle
+        await _dismiss_cookie_consent(page)
     except Exception as e:
         yield {"type": "page_error", "url": page_url, "error": str(e)}
         return
@@ -196,6 +244,7 @@ async def _scan_page(
         try:
             await page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
             await asyncio.sleep(1.0)
+            await _dismiss_cookie_consent(page)
         except Exception:
             pass  # best effort; some pages redirect
 
@@ -249,6 +298,7 @@ async def _scan_page(
                 mobile_page = await mobile_context.new_page()
                 await mobile_page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
                 await asyncio.sleep(1.5)
+                await _dismiss_cookie_consent(mobile_page)
 
                 from app.wcag_checks.keyboard_nav import KeyboardNavTest
                 mobile_kb_test = KeyboardNavTest(
@@ -292,6 +342,7 @@ async def _scan_page(
         # Navigate back cleanly for the holistic screenshot
         await page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
         await asyncio.sleep(1.0)
+        await _dismiss_cookie_consent(page)
 
         # Build context from what programmatic checks already found
         existing_failure_ids = {
@@ -527,6 +578,7 @@ class SiteCrawler:
                         # Navigate back to the page cleanly for link extraction
                         await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
                         await asyncio.sleep(0.5)
+                        await _dismiss_cookie_consent(page)
                         links = await _extract_links(page, self.start_url)
                         new_links = [
                             lnk for lnk in links

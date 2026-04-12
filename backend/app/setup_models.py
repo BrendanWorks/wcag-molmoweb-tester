@@ -110,7 +110,7 @@ def download_olmo3():
             bnb_4bit_quant_type="nf4",
         )
     else:
-        model_kwargs["torch_dtype"] = torch.float32
+        model_kwargs["dtype"] = torch.float32
 
     AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
     print(f"[setup] {model_name} ready")

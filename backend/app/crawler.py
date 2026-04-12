@@ -74,48 +74,58 @@ _INTER_PAGE_DELAY_MS = 800
 
 # ── Cookie consent dismissal ──────────────────────────────────────────────────
 
-async def _dismiss_cookie_consent(page: Page) -> None:
+async def _dismiss_overlays(page: Page) -> None:
     """
-    Dismiss any cookie/GDPR consent overlay on any site.
+    Dismiss any overlay that would occlude the page before a screenshot:
+    cookie/GDPR banners, newsletter popups, chat widgets, age gates, etc.
 
-    Strategy: JavaScript text scan first (works on any CMP regardless of
-    selector structure), then Playwright selector fallback for overlays in
-    iframes or shadow roots that JS can't reach.
-
-    Called after every page.goto() so MolmoWeb sees the real page content.
-    If consent cookies are set on the first dismiss, subsequent page loads
-    in the same browser context won't show the banner again.
+    Strategy:
+      1. JS text scan — finds any visible dismiss/close/accept button by label
+         text, regardless of CMP vendor, class names, or DOM structure. Handles
+         cookies, newsletters, chat bubbles, survey prompts, and GDPR dialogs.
+      2. Playwright selector fallback for known CMP IDs in iframes / shadow roots.
+      3. Post-dismiss sleep lets CSS overlay animations finish so they don't
+         appear as artifacts in screenshots.
     """
-    # Primary: JS text scan — finds any visible button whose label starts with
-    # an accept/agree/close pattern, regardless of DOM structure or CMP vendor.
-    # Uses el.click() directly (no Playwright actionability checks) so it works
-    # even when the button is partially obscured during animation.
+    # JS text scan: matches accept/close/dismiss labels for any overlay type.
+    # el.click() bypasses Playwright actionability checks (handles partially
+    # obscured buttons mid-animation). We click up to 3 overlays per page
+    # (e.g. cookie banner + newsletter popup).
     dismissed = await page.evaluate("""() => {
-        const ACCEPT_RE = /^(accept|agree|allow|ok|got it|i agree|i accept|consent|continue|close|dismiss|understood|sure|yes)/i;
+        const ACCEPT_RE = /^(accept|agree|allow|ok|got it|i agree|i accept|consent|continue|close|dismiss|no thanks|maybe later|understood|sure|yes|×|✕)/i;
+        const REJECT_RE = /^(reject all|decline all)/i;  // avoid these — they may block content
         const candidates = Array.from(document.querySelectorAll(
-            'button, [role="button"], a[href="#"], input[type="button"], input[type="submit"]'
+            'button, [role="button"], a[href="#"], a[href=""], ' +
+            'input[type="button"], input[type="submit"], [aria-label*="close" i], ' +
+            '[aria-label*="dismiss" i], [aria-label*="accept" i]'
         ));
+        let count = 0;
         for (const el of candidates) {
+            if (count >= 3) break;
             const label = (
                 el.textContent || el.value ||
                 el.getAttribute('aria-label') || ''
             ).trim();
-            if (label.length > 0 && label.length < 60 && ACCEPT_RE.test(label)) {
+            if (
+                label.length > 0 && label.length < 80 &&
+                ACCEPT_RE.test(label) && !REJECT_RE.test(label)
+            ) {
                 const r = el.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) {
                     el.click();
-                    return label.slice(0, 40);
+                    count++;
                 }
             }
         }
-        return null;
+        return count;
     }""")
+
     if dismissed:
-        await asyncio.sleep(0.5)
+        # Wait for overlay exit animations to complete before any screenshot
+        await asyncio.sleep(0.7)
         return
 
-    # Fallback: Playwright selectors for iframes and known CMP IDs that the
-    # JS scan above can't reach.
+    # Fallback: Playwright selectors for known CMPs in iframes/shadow roots
     pw_selectors = [
         "#onetrust-accept-btn-handler",
         "#accept-cookies",
@@ -123,11 +133,12 @@ async def _dismiss_cookie_consent(page: Page) -> None:
         "[data-cookiebanner='accept_button']",
         "iframe[src*='consent'] >> button",
         "iframe[id*='cookie'] >> button",
+        "iframe[src*='popup'] >> button",
     ]
     for sel in pw_selectors:
         try:
             await page.click(sel, timeout=600)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.7)
             return
         except Exception:
             continue
@@ -230,7 +241,7 @@ async def _scan_page(
     try:
         await page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
         await asyncio.sleep(1.5)  # let JS-heavy SPAs settle
-        await _dismiss_cookie_consent(page)
+        await _dismiss_overlays(page)
     except Exception as e:
         yield {"type": "page_error", "url": page_url, "error": str(e)}
         return
@@ -258,7 +269,7 @@ async def _scan_page(
         try:
             await page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
             await asyncio.sleep(1.0)
-            await _dismiss_cookie_consent(page)
+            await _dismiss_overlays(page)
         except Exception:
             pass  # best effort; some pages redirect
 
@@ -312,7 +323,7 @@ async def _scan_page(
                 mobile_page = await mobile_context.new_page()
                 await mobile_page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
                 await asyncio.sleep(1.5)
-                await _dismiss_cookie_consent(mobile_page)
+                await _dismiss_overlays(mobile_page)
 
                 from app.wcag_checks.keyboard_nav import KeyboardNavTest
                 mobile_kb_test = KeyboardNavTest(
@@ -356,7 +367,7 @@ async def _scan_page(
         # Navigate back cleanly for the holistic screenshot
         await page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
         await asyncio.sleep(1.0)
-        await _dismiss_cookie_consent(page)
+        await _dismiss_overlays(page)
 
         # Build context from what programmatic checks already found
         existing_failure_ids = {
@@ -592,7 +603,7 @@ class SiteCrawler:
                         # Navigate back to the page cleanly for link extraction
                         await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
                         await asyncio.sleep(0.5)
-                        await _dismiss_cookie_consent(page)
+                        await _dismiss_overlays(page)
                         links = await _extract_links(page, self.start_url)
                         new_links = [
                             lnk for lnk in links

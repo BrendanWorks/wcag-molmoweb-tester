@@ -115,36 +115,45 @@ class MolmoQAAnalyzer:
         )
 
         # Patch 2: tie_weights(missing_keys=...) — Transformers 5.x now passes
-        # missing_keys to tie_weights(); Molmo's remote code defines it as
-        # tie_weights(self) with no extra args.  Patching PreTrainedModel doesn't
-        # help because Python's MRO finds the Molmo class first.  Instead, scan
-        # sys.modules for every class the remote code registered and patch any
-        # tie_weights that lacks missing_keys directly on that class.
+        # missing_keys to tie_weights(); Molmo-7B-D's MolmoForCausalLM defines
+        # tie_weights(self) with no extra args → TypeError.
+        #
+        # WHY WE PATCH AFTER from_pretrained FAILS (not before):
+        # The processor load only imports processing_molmo.py / image_processing_molmo.py.
+        # modeling_molmo.py (containing MolmoForCausalLM) is imported by from_pretrained
+        # via trust_remote_code — and tie_weights() is called immediately after within
+        # that same from_pretrained call.  So we can't pre-scan sys.modules because the
+        # class doesn't exist yet.  Strategy: attempt load → catch TypeError → scan +
+        # patch newly-registered class → retry (weights already cached, fast).
         import sys as _sys
-        def _make_safe_tie(orig_fn):
-            def _safe(self, missing_keys=None, **kw):
-                return orig_fn(self, **kw)
-            return _safe
-        _patched_count = 0
-        for _mod in list(_sys.modules.values()):
-            if _mod is None:
-                continue
-            _mod_name = getattr(_mod, "__name__", "") or ""
-            if "molmo" not in _mod_name.lower():
-                continue
-            for _attr in list(vars(_mod).keys()):
-                _cls = getattr(_mod, _attr, None)
-                if not isinstance(_cls, type):
+
+        def _patch_tie_weights_in_sys_modules():
+            _count = 0
+            for _mod in list(_sys.modules.values()):
+                if _mod is None:
                     continue
-                _own_tie = _cls.__dict__.get("tie_weights")
-                if _own_tie is None:
+                if "molmo" not in (getattr(_mod, "__name__", "") or "").lower():
                     continue
-                _sig = _inspect.signature(_own_tie)
-                if "missing_keys" not in _sig.parameters and "kwargs" not in _sig.parameters:
-                    _cls.tie_weights = _make_safe_tie(_own_tie)
-                    _patched_count += 1
-        if _patched_count:
-            print(f"[MolmoQAAnalyzer] tie_weights patch applied to {_patched_count} class(es)")
+                for _attr in list(vars(_mod).keys()):
+                    _cls = getattr(_mod, _attr, None)
+                    if not isinstance(_cls, type):
+                        continue
+                    _own = _cls.__dict__.get("tie_weights")
+                    if _own is None:
+                        continue
+                    try:
+                        _sig = _inspect.signature(_own)
+                        if "missing_keys" not in _sig.parameters and "**" not in str(_sig):
+                            def _mk(o):
+                                def _safe(self, missing_keys=None, **kw):
+                                    return o(self, **kw)
+                                return _safe
+                            _cls.tie_weights = _mk(_own)
+                            _count += 1
+                            print(f"[MolmoQAAnalyzer] tie_weights patch applied to {_cls.__name__}")
+                    except Exception:
+                        pass
+            return _count
 
         model_kwargs: dict = {"trust_remote_code": True}
         if device == "cuda":
@@ -164,7 +173,20 @@ class MolmoQAAnalyzer:
         else:
             model_kwargs["dtype"] = torch.float32
 
-        self.model = AutoModelForCausalLM.from_pretrained(self.MODEL_NAME, **model_kwargs)
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(self.MODEL_NAME, **model_kwargs)
+        except TypeError as _te:
+            if "tie_weights" not in str(_te) or "missing_keys" not in str(_te):
+                raise
+            # modeling_molmo.py is now in sys.modules — patch and retry.
+            # Free any partial CUDA allocations from the failed first attempt.
+            import gc as _gc
+            _gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            _n = _patch_tie_weights_in_sys_modules()
+            print(f"[MolmoQAAnalyzer] Patched {_n} class(es); retrying from_pretrained...")
+            self.model = AutoModelForCausalLM.from_pretrained(self.MODEL_NAME, **model_kwargs)
 
         # Bypass strict kwarg validator (same issue as MolmoWeb on Transformers 5.5.3)
         self.model._validate_model_kwargs = lambda model_kwargs: None

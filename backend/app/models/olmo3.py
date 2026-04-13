@@ -43,14 +43,19 @@ class OLMo3Narrator:
 
         model_kwargs: dict = {}
         if self.device == "cuda":
-            # Explicit max_memory budget prevents device_map="auto" from
-            # trying to offload layers to CPU when fragmented VRAM makes
-            # free memory look scarce. OLMo-3-7B 4-bit ≈ 3.5 GB; 22 GB
-            # budget leaves ample headroom and keeps everything on GPU.
-            # (bitsandbytes 4-bit does not support CPU offload without
-            # llm_int8_enable_fp32_cpu_offload=True, so we must avoid it.)
-            model_kwargs["device_map"] = "auto"
-            model_kwargs["max_memory"] = {0: "22GiB"}
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+            free, total = torch.cuda.mem_get_info(0)
+            print(f"[OLMo3] VRAM before load: {free/1e9:.1f} GB free / {total/1e9:.1f} GB total")
+
+            # device_map={"": 0} forces ALL layers onto cuda:0 with no CPU
+            # offload path. If VRAM is genuinely full you get a clean OOM
+            # (caught upstream) instead of the bitsandbytes meta-tensor crash
+            # that occurs when device_map="auto" silently offloads to CPU.
+            # OLMo-3-7B in 4-bit NF4 ≈ 3.5 GB — fits easily after MolmoWeb
+            # is freed. If VRAM shows <5 GB free here, something above leaked.
+            model_kwargs["device_map"] = {"": 0}
             from transformers import BitsAndBytesConfig
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,

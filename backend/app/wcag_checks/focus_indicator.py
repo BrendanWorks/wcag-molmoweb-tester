@@ -156,9 +156,6 @@ class FocusIndicatorTest(BaseWCAGTest):
                     f"CSS outline found on {el_desc} — MolmoWeb visual confirmation "
                     f"({molmo_calls}/{MAX_MOLMO_CALLS})..."
                 )
-                # Affordance-style prompts — trained distribution for MolmoWeb Screenshot QA.
-                # "Where is X?" invites a descriptive location answer; yes/no pulls the model
-                # into trajectory mode and produces garbled numbered-step output.
                 primary_prompt = (
                     "Where is the keyboard focus indicator on this page? "
                     "Describe the location and appearance of any visible focus outline or highlight."
@@ -171,28 +168,36 @@ class FocusIndicatorTest(BaseWCAGTest):
                 molmo_raw = "[not run]"
                 molmo_secondary = "[not run]"
                 try:
-                    molmo_raw = await asyncio.wait_for(
-                        self.analyzer.analyze_raw(screenshot, primary_prompt),
-                        timeout=self.MOLMO_TIMEOUT,
-                    )
-                    print(f"[FocusIndicator] tab{tab_num} primary raw: {molmo_raw!r}")
-                except asyncio.TimeoutError:
-                    yield self._progress(f"MolmoWeb timed out on tab {tab_num} (primary).")
-                    molmo_raw = "[timed out]"
-
-                indicator_absent = _parse_focus_response(molmo_raw)
-                if indicator_absent is None:
-                    # Primary uninformative — try secondary for more signal
                     try:
-                        molmo_secondary = await asyncio.wait_for(
-                            self.analyzer.analyze_raw(screenshot, secondary_prompt),
+                        molmo_raw = await asyncio.wait_for(
+                            self.analyzer.analyze(screenshot, primary_prompt),
                             timeout=self.MOLMO_TIMEOUT,
                         )
-                        print(f"[FocusIndicator] tab{tab_num} secondary raw: {molmo_secondary!r}")
-                        indicator_absent = _parse_focus_response(molmo_secondary)
+                        print(f"[FocusIndicator] tab{tab_num} primary raw: {molmo_raw!r}")
                     except asyncio.TimeoutError:
-                        yield self._progress(f"MolmoWeb timed out on tab {tab_num} (secondary).")
-                        molmo_secondary = "[timed out]"
+                        yield self._progress(f"MolmoWeb timed out on tab {tab_num} (primary).")
+                        molmo_raw = "[timed out]"
+
+                    indicator_absent = _parse_focus_response(molmo_raw)
+                    if indicator_absent is None:
+                        # Primary uninformative — try secondary for more signal
+                        try:
+                            molmo_secondary = await asyncio.wait_for(
+                                self.analyzer.analyze(screenshot, secondary_prompt),
+                                timeout=self.MOLMO_TIMEOUT,
+                            )
+                            print(f"[FocusIndicator] tab{tab_num} secondary raw: {molmo_secondary!r}")
+                            indicator_absent = _parse_focus_response(molmo_secondary)
+                        except asyncio.TimeoutError:
+                            yield self._progress(f"MolmoWeb timed out on tab {tab_num} (secondary).")
+                            molmo_secondary = "[timed out]"
+                except Exception as _molmo_exc:
+                    yield self._progress(
+                        f"MolmoWeb visual check error on tab {tab_num} (non-fatal): {_molmo_exc}"
+                    )
+                    print(f"[FocusIndicator] tab{tab_num} MolmoWeb error: {_molmo_exc}")
+                    molmo_raw = "[visual analysis unavailable]"
+                    indicator_absent = None
 
                 molmo_logs.append(
                     f"tab{tab_num}: primary={molmo_raw[:80]!r} secondary={molmo_secondary[:80]!r}"

@@ -53,12 +53,18 @@ image = (
         "playwright install chromium",
         "playwright install-deps",
     )
-    # Copy the new app structure into /app
+    # ── Model baking BEFORE code copy ────────────────────────────────────
+    # IMPORTANT: copy only setup_models.py first and bake models BEFORE
+    # copying the full app directory.  This way model weights are cached in
+    # their own image layer — layer hash depends only on setup_models.py,
+    # not on every .py file in app/.  Code edits no longer trigger a
+    # 20-minute model re-download on every deploy.
+    .add_local_file("app/setup_models.py", "/app/setup_models.py", copy=True)
+    .run_commands("mkdir -p /app/app && cd /app && python setup_models.py", gpu="any")
+    # ── App source (cheap; invalidated on code changes) ───────────────────
     .add_local_dir("app", remote_path="/app/app", copy=True)
     # Copy datasets dir stub (eval logger writes here)
     .run_commands("mkdir -p /app/datasets/molmoaccess-eval/raw")
-    # Bake models into the image at build time
-    .run_commands("cd /app && python app/setup_models.py", gpu="any")
 )
 
 

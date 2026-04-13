@@ -91,6 +91,21 @@ def download_molmoweb():
         torch.cuda.empty_cache()
 
 
+def download_molmo_qa():
+    # Molmo-7B-D-0924 remote code hits multiple Transformers 5.x compat issues
+    # during model instantiation (all_tied_weights_keys, caching_allocator_warmup,
+    # compute_module_sizes).  The setup step only needs the weights on disk so
+    # the container image has them baked in — skip model instantiation entirely
+    # and just download the raw files via snapshot_download.
+    # All patches and model loading happen at runtime in MolmoQAAnalyzer.__init__.
+    from huggingface_hub import snapshot_download
+
+    model_name = "allenai/Molmo-7B-D-0924"
+    print(f"[setup] Downloading {model_name} weights (snapshot only)...")
+    snapshot_download(model_name)
+    print(f"[setup] {model_name} weights cached ✓")
+
+
 def download_olmo3():
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
@@ -119,5 +134,6 @@ def download_olmo3():
 if __name__ == "__main__":
     print("[setup] Baking models into Modal image...")
     download_molmoweb()
+    download_molmo_qa()
     download_olmo3()
     print("[setup] All models downloaded and patched ✓")

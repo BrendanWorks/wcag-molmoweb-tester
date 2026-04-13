@@ -31,6 +31,7 @@ image = (
         "websockets",
         "pydantic",
         "python-multipart",
+        "tensorflow-cpu",  # required by Molmo-7B-D-0924 processor remote code
     )
     .run_commands("playwright install chromium && playwright install-deps")
     .add_local_dir("backend", remote_path="/app", copy=True)
@@ -40,7 +41,7 @@ image = (
 
 @app.function(
     image=image,
-    gpu="A10G",
+    gpu="A100-40GB",
     timeout=900,
     env={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
 )

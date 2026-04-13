@@ -289,21 +289,29 @@ async def _scan_page(
         except Exception:
             pass  # best effort; some pages redirect
 
-        async for event in test.run(page, task="Evaluate web accessibility"):
-            # Stamp page_url into result events
-            if event["type"] == "result":
-                event["data"]["page_url"] = page_url
-                results.append(dict(event["data"]))
-                # Log to eval dataset
-                if eval_logger:
-                    eval_logger.log_from_test_result(
-                        page_url=page_url,
-                        page_depth=depth,
-                        check_id=test_id,
-                        check_name=test.TEST_NAME,
-                        result_dict=event["data"],
-                    )
-            yield event
+        try:
+            async for event in test.run(page, task="Evaluate web accessibility"):
+                # Stamp page_url into result events
+                if event["type"] == "result":
+                    event["data"]["page_url"] = page_url
+                    results.append(dict(event["data"]))
+                    # Log to eval dataset
+                    if eval_logger:
+                        eval_logger.log_from_test_result(
+                            page_url=page_url,
+                            page_depth=depth,
+                            check_id=test_id,
+                            check_name=test.TEST_NAME,
+                            result_dict=event["data"],
+                        )
+                yield event
+        except Exception as _test_exc:
+            print(f"[_scan_page] {test_id} raised uncaught exception (non-fatal): {_test_exc}")
+            yield {
+                "type": "progress",
+                "test": test_id,
+                "message": f"[{test_id}] check aborted due to error (non-fatal): {_test_exc}",
+            }
 
         yield {"type": "test_complete", "url": page_url, "test": test_id}
 

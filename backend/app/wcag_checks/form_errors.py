@@ -86,34 +86,40 @@ class FormErrorTest(BaseWCAGTest):
         # ── Agent layer: fill + submit form like a real user ─────────────────
         # MolmoWeb navigates the form visually — it handles multi-step forms,
         # JS-revealed fields, and non-standard submit patterns that selectors miss.
-        yield self._progress("[AGENT PATH] filling form with invalid data to trigger errors...")
+        # Gate: skip agent entirely if MolmoWeb is in trajectory mode.
+        _agent_capable = await self._probe_agent_capable(page)
+        if not _agent_capable:
+            yield self._progress("[AGENT PATH] MolmoWeb action output uninterpretable — skipping agent, using Playwright fallback.")
+
         agent_submitted = False
         agent_log = ""
-        _form_agent_msgs: list[str] = []
-        try:
-            agent = MolmoWebAgentLoop(self.analyzer, max_steps=8)
-            agent_result = await agent.run(
-                page,
-                "Fill out all visible form fields with invalid or empty data to trigger "
-                "validation errors. Use obviously wrong values: blank required fields, "
-                "bad email formats (e.g. 'notanemail'), too-short passwords (e.g. 'a'), "
-                "invalid dates (e.g. '99/99/9999'). Then submit the form by clicking the "
-                "submit button or pressing Enter.",
-                progress_cb=_form_agent_msgs.append,
-            )
-            for msg in _form_agent_msgs:
-                yield self._progress(msg)
-            if agent_result.steps:
-                agent_submitted = any(
-                    s.action_type in ("click", "key") and s.executed
-                    for s in agent_result.steps
+        if _agent_capable:
+            yield self._progress("[AGENT PATH] filling form with invalid data to trigger errors...")
+            _form_agent_msgs: list[str] = []
+            try:
+                agent = MolmoWebAgentLoop(self.analyzer, max_steps=8)
+                agent_result = await agent.run(
+                    page,
+                    "Fill out all visible form fields with invalid or empty data to trigger "
+                    "validation errors. Use obviously wrong values: blank required fields, "
+                    "bad email formats (e.g. 'notanemail'), too-short passwords (e.g. 'a'), "
+                    "invalid dates (e.g. '99/99/9999'). Then submit the form by clicking the "
+                    "submit button or pressing Enter.",
+                    progress_cb=_form_agent_msgs.append,
                 )
-                agent_log = agent_result.action_summary
-                yield self._progress(
-                    f"[AGENT PATH] completed {len(agent_result.steps)} action(s): {agent_log[:80]}"
-                )
-        except Exception as e:
-            yield self._progress(f"[AGENT PATH] error (non-fatal): {e}")
+                for msg in _form_agent_msgs:
+                    yield self._progress(msg)
+                if agent_result.steps:
+                    agent_submitted = any(
+                        s.action_type in ("click", "key") and s.executed
+                        for s in agent_result.steps
+                    )
+                    agent_log = agent_result.action_summary
+                    yield self._progress(
+                        f"[AGENT PATH] completed {len(agent_result.steps)} action(s): {agent_log[:80]}"
+                    )
+            except Exception as e:
+                yield self._progress(f"[AGENT PATH] error (non-fatal): {e}")
 
         # ── Playwright fallback: direct fill + submit ─────────────────────────
         # Run if agent took no actions (e.g. form not visible or agent timed out).

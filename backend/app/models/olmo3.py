@@ -49,13 +49,11 @@ class OLMo3Narrator:
             free, total = torch.cuda.mem_get_info(0)
             print(f"[OLMo3] VRAM before load: {free/1e9:.1f} GB free / {total/1e9:.1f} GB total")
 
-            # device_map={"": 0} forces ALL layers onto cuda:0 with no CPU
-            # offload path. If VRAM is genuinely full you get a clean OOM
-            # (caught upstream) instead of the bitsandbytes meta-tensor crash
-            # that occurs when device_map="auto" silently offloads to CPU.
-            # OLMo-3-7B in 4-bit NF4 ≈ 3.5 GB — fits easily after MolmoWeb
-            # is freed. If VRAM shows <5 GB free here, something above leaked.
-            model_kwargs["device_map"] = {"": 0}
+            # device_map="auto" on A100-40GB: MolmoWeb + MolmoQA freed before
+            # this point, leaving ~16 GB free — plenty for OLMo 4-bit (~3.5 GB).
+            # device_map={"": 0} triggers a "property has no setter" error in
+            # OLMo-3's remote code during bitsandbytes quantization; "auto" avoids it.
+            model_kwargs["device_map"] = "auto"
             from transformers import BitsAndBytesConfig
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,

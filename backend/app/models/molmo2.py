@@ -232,17 +232,32 @@ class MolmoQAAnalyzer:
 
             input_len = inputs["input_ids"].shape[1]
 
+            # Molmo-7B-D-0924 uses generate_from_batch (its own remote-code API),
+            # not the standard GenerationMixin.generate.  Fall back to generate
+            # only if generate_from_batch is absent (shouldn't happen with this model).
             with torch.inference_mode():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=120,
-                    do_sample=False,
-                    no_repeat_ngram_size=3,
-                    logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
-                )
+                if hasattr(self.model, "generate_from_batch"):
+                    from transformers import GenerationConfig
+                    outputs = self.model.generate_from_batch(
+                        inputs,
+                        GenerationConfig(
+                            max_new_tokens=120,
+                            stop_strings="<|endoftext|>",
+                            do_sample=False,
+                        ),
+                        tokenizer=self.processor.tokenizer,
+                    )
+                else:
+                    outputs = self.model.generate(
+                        **inputs,
+                        max_new_tokens=120,
+                        do_sample=False,
+                        no_repeat_ngram_size=3,
+                        logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
+                    )
 
             new_tokens = outputs[0][input_len:]
-            return self.processor.decode(new_tokens, skip_special_tokens=True).strip()
+            return self.processor.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
         except Exception as e:
             print(f"[MolmoQAAnalyzer] query error: {e}")

@@ -20,10 +20,17 @@ WebSocket event types emitted (backward-compatible with PointCheck v1 frontend):
   done            — final report (screenshot_b64 stripped)
   error           — fatal error
 
-Models are loaded sequentially within each scan — never both resident at once.
-On Modal A10G (24GB VRAM):
-  Phase 1 (visual checks): MolmoWeb-8B bfloat16 ~16GB, OLMo not loaded
-  Phase 2 (narrative):     MolmoWeb freed, OLMo-3-7B 4-bit NF4 ~3.5GB
+Two-phase sequential model residency on Modal A100-40GB (42.4 GB VRAM):
+  Phase 1 (visual checks):
+    MolmoWeb-8B  bfloat16  ~16 GB  — pointing + agent navigation
+    MolmoQA-7B   4-bit NF4  ~4 GB  — screenshot description QA
+    Total Phase 1: ~20 GB, leaving ~22 GB headroom.
+    OLMo is NOT loaded during Phase 1.
+
+  Phase 2 (narrative):
+    MolmoWeb + MolmoQA freed (gc.collect + cuda.empty_cache + synchronize).
+    OLMo-3-7B  bfloat16  ~14 GB  — executive summary narrative.
+    Fits comfortably with ~28 GB free after Phase 1 teardown.
 """
 
 from __future__ import annotations
@@ -205,7 +212,11 @@ async def ws_crawl(ws: WebSocket, job_id: str):
                 _torch.cuda.empty_cache()
             await send({"type": "status", "message": "Visual checks done. Loading OLMo-3-7B for narrative..."})
 
-            # ── Phase 2: OLMo 4-bit NF4 (~3.5 GB) ───────────────────────────
+            # ── Phase 2: OLMo-3-7B bfloat16 (~14 GB) ────────────────────────
+            # 4-bit NF4 is NOT used — bitsandbytes tries to overwrite a
+            # read-only property in OLMo-3's architecture → "property of
+            # Olmo3Model object has no setter".  bfloat16 fits on the A100
+            # (~14 GB) with ~28 GB of freed VRAM available after Phase 1.
             # Wrapped in try/except — if OLMo fails to load (e.g. fragmented
             # VRAM on a warm container), we still deliver a complete report
             # with the visual check results. The narrative is best-effort.

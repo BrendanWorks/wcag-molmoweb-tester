@@ -527,23 +527,28 @@ async def _run_vision_inference(
     max_new_tokens: int = 512,
 ) -> str:
     """
-    Run MolmoWeb-8B inference via the analyzer's thread executor.
+    Run Molmo-7B-D inference via the analyzer's QA model.
     Returns the raw decoded string, or "" on error.
+
+    IMPORTANT: This uses analyzer.analyze_full() which routes to Molmo-7B-D-0924
+    (the base description model), NOT analyzer._run_inference() which runs MolmoWeb-8B.
+    MolmoWeb-8B is a web navigation model that outputs action JSON
+    (mouse_click, done, coordinates) — sending it a WCAG analysis prompt produces
+    trajectory output that the JSON parser silently discards as empty issues.
+    Molmo-7B-D is trained on image-text pairs and produces natural-language
+    descriptions and structured JSON output as requested.
     """
-    loop = asyncio.get_event_loop()
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(
-                None,
-                lambda: analyzer._run_inference(image, prompt, max_new_tokens),
-            ),
-            timeout=90.0,   # holistic analysis can take up to 90s on A10G
+            analyzer.analyze_full(image, prompt, max_new_tokens),
+            timeout=120.0,  # long-form JSON generation can take up to 2 min
         )
     except asyncio.TimeoutError:
-        print(f"[vision_analysis] Inference timed out after 90s")
+        print("[vision_analysis] Inference timed out after 120s")
         return ""
     except Exception as e:
-        print(f"[vision_analysis] Inference error: {e}")
+        import traceback as _tb
+        print(f"[vision_analysis] Inference error: {e}\n{_tb.format_exc()}")
         return ""
 
 

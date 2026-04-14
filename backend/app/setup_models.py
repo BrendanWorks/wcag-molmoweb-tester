@@ -107,28 +107,28 @@ def download_molmo_qa():
 
 
 def download_olmo3():
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    """
+    Download OLMo-3-7B-Instruct weights without instantiating the model.
+
+    WHY snapshot_download (not from_pretrained):
+    OLMo-3's architecture has read-only properties that bitsandbytes tries to
+    overwrite during 4-bit quantization → "property of Olmo3Model has no setter".
+    This crashes during image build.  The runtime loader (olmo3.py) uses bfloat16
+    which avoids bitsandbytes entirely; at build time we only need the weights on
+    disk, not an instantiated model.
+    """
+    from huggingface_hub import snapshot_download
+    from transformers import AutoTokenizer
 
     model_name = "allenai/OLMo-3-7B-Instruct"
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[setup] Downloading {model_name} on {device}...")
+    print(f"[setup] Downloading {model_name} weights (snapshot only)...")
 
+    # Download tokenizer via transformers (validates the config files)
     AutoTokenizer.from_pretrained(model_name)
 
-    model_kwargs: dict = {}
-    if device == "cuda":
-        model_kwargs["device_map"] = "auto"
-        model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        )
-    else:
-        model_kwargs["dtype"] = torch.float32
-
-    AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
-    print(f"[setup] {model_name} ready")
+    # Download remaining model weights into the HF cache
+    snapshot_download(model_name)
+    print(f"[setup] {model_name} weights cached ✓")
 
 
 if __name__ == "__main__":

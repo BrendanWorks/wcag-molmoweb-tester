@@ -1,11 +1,14 @@
 """
 PointCheck — Modal Deployment
 
-Two-model architecture:
-  allenai/MolmoWeb-8B  — visual WCAG analysis (7 yes/no checks per page, bfloat16)
-  allenai/OLMo-3-7B    — executive summary narrative (4-bit NF4, loaded after MolmoWeb freed)
+Three-model architecture:
+  allenai/MolmoWeb-8B       — web navigation agent + element pointing (bfloat16, ~16 GB)
+  allenai/Molmo-7B-D-0924   — screenshot QA + holistic WCAG analysis (4-bit NF4, ~4 GB)
+  allenai/OLMo-3-7B-Instruct — executive summary narrative (bfloat16, ~14 GB)
 
-BFS site crawl via Playwright. MolmoWeb and OLMo never resident simultaneously on A10G.
+Phase 1: MolmoWeb + MolmoQA co-resident during visual checks (~20 GB / 42.4 GB A100).
+Phase 2: Both freed → OLMo loaded for narrative (~14 GB), then freed.
+BFS site crawl via Playwright. GPU: A100-40GB.
 Entrypoint: backend/app/main.py (FastAPI + WebSocket streaming).
 """
 

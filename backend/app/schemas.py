@@ -52,7 +52,8 @@ class CrawlRequest(BaseModel):
     @field_validator("max_depth")
     @classmethod
     def cap_depth(cls, v: int) -> int:
-        return min(max(1, v), 5)
+        # Allow 0 for single-page mode (the /api/run legacy shim passes max_depth=0)
+        return min(max(0, v), 5)
 
     @field_validator("tests")
     @classmethod

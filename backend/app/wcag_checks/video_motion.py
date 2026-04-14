@@ -176,7 +176,12 @@ class VideoMotionTest(BaseWCAGTest):
     TEST_NAME = "Video, Audio & Motion"
     WCAG_CRITERIA = ["1.2.1", "1.2.2", "2.2.2", "2.3.1"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = "Is there any auto-playing video or animation without a visible pause or stop button? Answer yes or no."
+    MOLMO_QUESTION = (
+        "Describe any videos, animations, carousels, or auto-playing content visible on this "
+        "page. For each one, describe whether pause, stop, or mute controls are visible and "
+        "accessible. If moving or animated content lacks pause controls, describe the element "
+        "and its location. If no moving content is visible, say so."
+    )
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Scanning for video, audio, and animated content...")
@@ -198,7 +203,11 @@ class VideoMotionTest(BaseWCAGTest):
         has_dom_media = video_count > 0 or audio_count > 0 or embed_count > 0
         molmo_sees_motion = molmo_analysis and any(
             kw in molmo_analysis.lower()
-            for kw in ("carousel", "slider", "animation", "video", "play", "moving", "flashing")
+            for kw in (
+                "carousel", "slider", "animation", "video", "play", "moving", "flashing",
+                "auto-play", "autoplay", "rotating", "scrolling banner", "without pause",
+                "no pause", "no stop", "no mute", "lacks pause", "lacks controls",
+            )
         )
         if not has_dom_media and molmo_sees_motion and not issues:
             issues.append({

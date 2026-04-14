@@ -204,33 +204,36 @@ class MolmoQAAnalyzer:
 
         print(f"[MolmoQAAnalyzer] Ready ({device})")
 
-    def query(self, screenshot: Image.Image, question: str) -> str:
-        """Ask a visual accessibility question. Returns a plain-text answer."""
+    def _generate(
+        self,
+        screenshot: Image.Image,
+        full_prompt: str,
+        max_new_tokens: int = 120,
+    ) -> str:
+        """
+        Core inference. `full_prompt` is passed to the processor as-is.
+
+        Used by both query() (which adds a QA wrapper) and query_raw() (which
+        passes the caller's prompt directly for long-form / JSON analysis).
+        """
         try:
             if self.device == "cuda":
                 gc.collect()
                 torch.cuda.empty_cache()
 
-            # Cap width to avoid token overflow (same limit as MolmoWeb)
+            # Cap width to avoid token overflow — each 448×448 crop costs ~729 tokens
             if screenshot.width > 896:
                 scale = 896 / screenshot.width
                 screenshot = screenshot.resize(
                     (896, max(1, int(screenshot.height * scale))), Image.LANCZOS
                 )
 
-            prompt = (
-                f"Answer this accessibility question about the webpage screenshot "
-                f"in 1-2 clear sentences. Describe only what you can see.\n\n"
-                f"Question: {question}"
-            )
-
-            # Pass images as a list — Molmo-7B-D-0924 processor expects [image], not image
-            raw = self.processor.process(images=[screenshot], text=prompt)
+            # Pass images as a list — Molmo-7B-D-0924 processor expects [image], not bare PIL
+            raw = self.processor.process(images=[screenshot], text=full_prompt)
             inputs = {
                 k: (v.unsqueeze(0).to(self.device) if isinstance(v, torch.Tensor) else v)
                 for k, v in raw.items()
             }
-
             input_len = inputs["input_ids"].shape[1]
 
             # Molmo-7B-D-0924 uses generate_from_batch (its own remote-code API),
@@ -242,7 +245,7 @@ class MolmoQAAnalyzer:
                     outputs = self.model.generate_from_batch(
                         inputs,
                         GenerationConfig(
-                            max_new_tokens=120,
+                            max_new_tokens=max_new_tokens,
                             stop_strings="<|endoftext|>",
                             do_sample=False,
                         ),
@@ -251,7 +254,7 @@ class MolmoQAAnalyzer:
                 else:
                     outputs = self.model.generate(
                         **inputs,
-                        max_new_tokens=120,
+                        max_new_tokens=max_new_tokens,
                         do_sample=False,
                         no_repeat_ngram_size=3,
                         logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
@@ -262,8 +265,46 @@ class MolmoQAAnalyzer:
 
         except Exception as e:
             import traceback as _tb
-            print(f"[MolmoQAAnalyzer] query error: {e}\n{_tb.format_exc()}")
+            print(f"[MolmoQAAnalyzer] _generate error: {e}\n{_tb.format_exc()}")
             return ""
+
+    def query(self, screenshot: Image.Image, question: str) -> str:
+        """
+        Ask a short visual accessibility question. Returns a 1-2 sentence answer.
+
+        Wraps `question` in an accessibility-expert framing and caps output at
+        120 tokens.  For long-form analysis (holistic WCAG JSON, video QA), use
+        query_raw() which passes the prompt as-is with a configurable token budget.
+        """
+        prompt = (
+            f"Answer this accessibility question about the webpage screenshot "
+            f"in 1-2 clear sentences. Describe only what you can see.\n\n"
+            f"Question: {question}"
+        )
+        answer = self._generate(screenshot, prompt, max_new_tokens=120)
+        print(f"[MolmoQAAnalyzer] Q '{question[:50]}' → {answer[:80]!r}")
+        return answer
+
+    def query_raw(
+        self,
+        screenshot: Image.Image,
+        prompt: str,
+        max_new_tokens: int = 512,
+    ) -> str:
+        """
+        Run inference with `prompt` passed directly — no QA wrapper added.
+
+        Used for:
+          • Holistic WCAG JSON analysis (vision_analysis.py) — needs structured
+            JSON output with up to 10 issues, ~500 tokens.
+          • Video frame QA — needs a 3-question structured prose response, ~256 tokens.
+
+        Unlike query(), this bypasses the QA framing so callers control the full
+        prompt structure (system role, output schema, field constraints, etc.).
+        """
+        result = self._generate(screenshot, prompt, max_new_tokens=max_new_tokens)
+        print(f"[MolmoQAAnalyzer] query_raw ({max_new_tokens} tok) → {len(result)} chars")
+        return result
 
 
 # ── MolmoWeb-8B analyzer ──────────────────────────────────────────────────────
@@ -432,8 +473,8 @@ class MolmoWebAnalyzer:
 
     async def analyze(self, screenshot: Image.Image, question: str) -> str:
         """
-        Ask a free-form accessibility question about a screenshot.
-        Returns plain-text answer (max ~120 tokens).
+        Ask a short accessibility question about a screenshot.
+        Returns a 1-2 sentence plain-text answer (max ~120 tokens).
 
         Delegates to MolmoQAAnalyzer (Molmo-7B-D-0924 in 4-bit NF4), which is
         trained for visual description. MolmoWeb-8B is reserved for pointing
@@ -442,6 +483,30 @@ class MolmoWebAnalyzer:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
             None, self._analyze_sync, screenshot, question
+        )
+
+    async def analyze_full(
+        self,
+        screenshot: Image.Image,
+        prompt: str,
+        max_new_tokens: int = 512,
+    ) -> str:
+        """
+        Run long-form inference via MolmoQAAnalyzer (Molmo-7B-D-0924).
+
+        Passes `prompt` directly with a configurable token budget — no QA wrapper.
+        Used for:
+          • Holistic WCAG JSON analysis (up to 10 structured issues, ~500 tokens)
+          • Video frame QA (3-question prose response, ~256 tokens)
+
+        Critical distinction: MolmoWeb-8B outputs action JSON for web navigation;
+        calling _run_inference() for WCAG analysis gets trajectory gibberish.
+        This method always routes to Molmo-7B-D which outputs natural language.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.qa_analyzer.query_raw(screenshot, prompt, max_new_tokens),
         )
 
     async def analyze_raw(
@@ -565,9 +630,8 @@ class MolmoWebAnalyzer:
             return ""
 
     def _analyze_sync(self, screenshot: Image.Image, question: str) -> str:
-        answer = self.qa_analyzer.query(screenshot, question)
-        print(f"[MolmoWebAnalyzer] QA '{question[:50]}' → {answer[:80]!r}")
-        return answer
+        # Delegates to MolmoQAAnalyzer.query() which logs the Q→A pair
+        return self.qa_analyzer.query(screenshot, question)
 
     def _point_sync(
         self, screenshot: Image.Image, query: str

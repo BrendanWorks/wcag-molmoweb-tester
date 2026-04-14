@@ -233,6 +233,8 @@ class MolmoWebAgentLoop:
     - Max steps is intentionally low (default 8) — we want focused interaction,
       not open-ended browsing.
     - All MolmoWeb errors are caught; the loop degrades gracefully.
+    - TOTAL_TIMEOUT caps the entire loop so a slow container cannot consume
+      the scan budget (900s Modal timeout) with a single runaway agent call.
 
     Typical usage in a WCAG check:
         agent = MolmoWebAgentLoop(self.analyzer, max_steps=5)
@@ -240,7 +242,8 @@ class MolmoWebAgentLoop:
         yield self._progress(f"Agent took {len(result.steps)} action(s): {result.action_summary}")
     """
 
-    INFERENCE_TIMEOUT = 60.0  # seconds per MolmoWeb call
+    INFERENCE_TIMEOUT = 45.0   # seconds per MolmoWeb inference call
+    TOTAL_TIMEOUT     = 240.0  # seconds for the entire agent loop (8 steps × 30s avg)
 
     def __init__(self, analyzer: MolmoWebAnalyzer, max_steps: int = 8):
         self.analyzer  = analyzer
@@ -252,6 +255,7 @@ class MolmoWebAgentLoop:
         task: str,
         stop_keywords: list[str] | None = None,
         progress_cb: "Optional[Callable[[str], None]]" = None,
+        total_timeout: float | None = None,
     ) -> AgentRunResult:
         """
         Execute the agent loop for `task`.
@@ -262,11 +266,42 @@ class MolmoWebAgentLoop:
             stop_keywords: If any of these appear in the page text, stop early.
             progress_cb:   Optional sync callback(message: str) called after
                            each step so callers can yield WS progress events.
+            total_timeout: Max wall-clock seconds for the entire loop.
+                           Defaults to TOTAL_TIMEOUT (240s). Pass None to disable.
 
         Returns:
             AgentRunResult with all steps + final screenshot.
             Never raises — all errors are captured in step.error.
         """
+        timeout_s = total_timeout if total_timeout is not None else self.TOTAL_TIMEOUT
+        try:
+            return await asyncio.wait_for(
+                self._run_inner(page, task, stop_keywords, progress_cb),
+                timeout=timeout_s,
+            )
+        except asyncio.TimeoutError:
+            tag = f"[MolmoAgent task={task[:40]!r}]"
+            msg = f"{tag} total timeout after {timeout_s:.0f}s — returning partial result"
+            print(msg)
+            if progress_cb:
+                progress_cb(msg)
+            # Return a partial result so callers still get whatever ran
+            result = AgentRunResult(task=task)
+            result.completion_reason = f"total timeout ({timeout_s:.0f}s)"
+            try:
+                result.final_screenshot = await self.analyzer.screenshot_to_image(page)
+            except Exception:
+                pass
+            return result
+
+    async def _run_inner(
+        self,
+        page: Page,
+        task: str,
+        stop_keywords: list[str] | None,
+        progress_cb: "Optional[Callable[[str], None]]",
+    ) -> AgentRunResult:
+        """Inner loop — wrapped by run() with a total timeout."""
         tag = f"[MolmoAgent task={task[:40]!r}]"
         print(f"{tag} starting (max_steps={self.max_steps})")
 
@@ -293,7 +328,7 @@ class MolmoWebAgentLoop:
                     timeout=self.INFERENCE_TIMEOUT,
                 )
             except asyncio.TimeoutError:
-                msg = f"{tag} step {step_num}: inference timed out"
+                msg = f"{tag} step {step_num}: inference timed out ({self.INFERENCE_TIMEOUT:.0f}s)"
                 print(msg)
                 if progress_cb: progress_cb(msg)
                 result.completion_reason = "inference timed out"

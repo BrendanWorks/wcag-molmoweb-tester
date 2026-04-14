@@ -18,7 +18,11 @@ class ZoomTest(BaseWCAGTest):
     TEST_NAME = "Resize Text & Reflow"
     WCAG_CRITERIA = ["1.4.4", "1.4.10"]
     DEFAULT_SEVERITY = "major"
-    MOLMO_QUESTION = "Does any content extend past the right edge of the screen? Answer yes or no."
+    MOLMO_QUESTION = (
+        "Describe any content that extends past the right edge of the viewport or requires "
+        "horizontal scrolling at this zoom level. Name the specific elements that appear cut off, "
+        "truncated, or overflow outside the visible area. If everything fits, say so."
+    )
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
         yield self._progress("Capturing baseline screenshot...")
@@ -89,10 +93,16 @@ class ZoomTest(BaseWCAGTest):
             els = ", ".join(f"<{e['tag']}> '{e['text']}'" for e in clipped[:3])
             failures.append(f"Text clipped at 200% zoom: {els}")
 
-        # Escalate to fail if MolmoWeb also sees horizontal overflow
+        # Escalate to fail if Molmo-7B-D also sees horizontal overflow.
+        # Note: Molmo-7B-D gives descriptive answers, not "yes/no" — match on
+        # content keywords rather than affirmative words.
         molmo_sees_overflow = molmo_analysis and any(
             kw in molmo_analysis.lower()
-            for kw in ("horizontal scroll", "extends beyond", "overflow", "truncated", "yes")
+            for kw in (
+                "horizontal scroll", "extends beyond", "overflow", "truncated",
+                "cut off", "outside the visible", "outside the viewport",
+                "requires scrolling", "scrollbar", "not visible",
+            )
         )
         if not failures and molmo_sees_overflow:
             failures.append(

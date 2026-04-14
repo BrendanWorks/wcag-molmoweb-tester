@@ -145,8 +145,11 @@ class MolmoQAAnalyzer:
                         _sig = _inspect.signature(_own)
                         if "missing_keys" not in _sig.parameters and "**" not in str(_sig):
                             def _mk(o):
-                                def _safe(self, missing_keys=None, **kw):
-                                    return o(self, **kw)
+                                # Molmo's tie_weights(self) takes NO extra args at all.
+                                # Drop both missing_keys AND any other new kwargs
+                                # Transformers adds (e.g. recompute_mapping=False).
+                                def _safe(self, **kw):
+                                    return o(self)
                                 return _safe
                             _cls.tie_weights = _mk(_own)
                             _count += 1

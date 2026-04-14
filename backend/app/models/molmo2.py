@@ -242,16 +242,33 @@ class MolmoQAAnalyzer:
             with torch.inference_mode():
                 if hasattr(self.model, "generate_from_batch"):
                     from transformers import GenerationConfig
-                    outputs = self.model.generate_from_batch(
-                        inputs,
-                        GenerationConfig(
-                            max_new_tokens=max_new_tokens,
-                            stop_strings="<|endoftext|>",
-                            do_sample=False,
-                            use_cache=True,   # Molmo-7B-D asserts use_cache in generate_from_batch
-                        ),
-                        tokenizer=self.processor.tokenizer,
+                    # Build config then explicitly set use_cache — constructor arg is
+                    # silently ignored in some Transformers 5.x builds because the field
+                    # was moved to a sub-config; setattr always works.
+                    gen_config = GenerationConfig(
+                        max_new_tokens=max_new_tokens,
+                        stop_strings="<|endoftext|>",
+                        do_sample=False,
                     )
+                    gen_config.use_cache = True
+                    print(f"[MolmoQAAnalyzer] gen_config.use_cache={gen_config.use_cache}")
+                    try:
+                        outputs = self.model.generate_from_batch(
+                            inputs,
+                            gen_config,
+                            tokenizer=self.processor.tokenizer,
+                        )
+                    except AssertionError:
+                        # generate_from_batch asserts use_cache; fall back to standard
+                        # HF GenerationMixin.generate which doesn't have this requirement.
+                        print("[MolmoQAAnalyzer] generate_from_batch assertion failed — using model.generate fallback")
+                        outputs = self.model.generate(
+                            **inputs,
+                            max_new_tokens=max_new_tokens,
+                            do_sample=False,
+                            no_repeat_ngram_size=3,
+                            logits_processor=LogitsProcessorList([ConsecutiveNewlineSuppressor()]),
+                        )
                 else:
                     outputs = self.model.generate(
                         **inputs,

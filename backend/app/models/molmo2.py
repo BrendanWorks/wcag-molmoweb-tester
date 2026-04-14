@@ -248,6 +248,7 @@ class MolmoQAAnalyzer:
                             max_new_tokens=max_new_tokens,
                             stop_strings="<|endoftext|>",
                             do_sample=False,
+                            use_cache=True,   # Molmo-7B-D asserts use_cache in generate_from_batch
                         ),
                         tokenizer=self.processor.tokenizer,
                     )

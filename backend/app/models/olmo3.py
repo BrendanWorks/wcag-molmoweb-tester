@@ -49,20 +49,22 @@ class OLMo3Narrator:
             free, total = torch.cuda.mem_get_info(0)
             print(f"[OLMo3] VRAM before load: {free/1e9:.1f} GB free / {total/1e9:.1f} GB total")
 
-            # Load bfloat16, no quantization.
-            # 4-bit NF4 via bitsandbytes triggers "property of Olmo3Model has no
-            # setter" during quantization — a read-only property in the OLMo-3
-            # architecture that bitsandbytes tries to overwrite.
-            # bfloat16 ≈ 14 GB; MolmoWeb + MolmoQA are freed before this point
-            # leaving ~16 GB free on A100-40GB — fits with ~2 GB headroom.
+            # Load bfloat16, no quantization, no device_map.
+            # WHY no device_map:
+            #   device_map="auto" triggers accelerate's dispatch_model(), which
+            #   tries to set hf_device_map and related attributes on the model.
+            #   OLMo-3's architecture has read-only @property descriptors for some
+            #   of these names → "property of 'Olmo3Model' object has no setter".
+            #   Loading without device_map brings the model to CPU first (~14 GB
+            #   system RAM), then .to("cuda") moves it to VRAM in one shot.
+            #   MolmoWeb + MolmoQA are freed before this point leaving ~28 GB free
+            #   on A100-40GB — the explicit .to() move fits with plenty of headroom.
             model_kwargs["dtype"] = torch.bfloat16
-            model_kwargs["device_map"] = "auto"
         else:
             model_kwargs["dtype"] = torch.float32
 
         self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
-        if self.device == "cpu":
-            self.model = self.model.to(self.device)
+        self.model = self.model.to(self.device)
         self.model.eval()
         print("[OLMo3] Ready")
 

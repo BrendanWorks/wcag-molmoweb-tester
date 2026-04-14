@@ -32,6 +32,9 @@ const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
   const lastSettingsRef = useRef({ task, selectedTests, wcagVersion });
   // Collect screenshot_b64 from streaming result events (stripped from done report to save WS payload)
   const screenshotMapRef = useRef<Record<string, string>>({});
+  // Native DOM refs — read input values directly to bypass React 19 synthetic event issues
+  const urlInputRef = useRef<HTMLInputElement | null>(null);
+  const taskInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -139,7 +142,7 @@ wcag_version: settings.wcagVersion,
 
       ws.onerror = () => {
         dismissColdStart();
-        const errMsg = "WebSocket connection failed. Is the backend running on port 8000?";
+        const errMsg = "Connection lost. The server may still be warming up — please try again in a few seconds.";
         setError(errMsg);
         setPhase("done");
         analytics.auditError(urlValue, errMsg);
@@ -167,25 +170,38 @@ wcag_version: settings.wcagVersion,
     }
   }
 
-  // ── Form submit ──────────────────────────────────────────────────────────────
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    e.stopPropagation();
+  // ── Core submit logic (no event dependency) ──────────────────────────────────
+  // NOTE: React 19 / Next.js 16 App Router intercepts <form onSubmit> for
+  // progressive enhancement, which can prevent e.preventDefault() from working.
+  // We bypass this entirely by wiring submission to button onClick + Enter key.
+  function doSubmit() {
+    // Read directly from DOM refs — bypasses React 19 controlled-input state lag
+    const rawUrl  = (urlInputRef.current?.value  ?? url).trim();
+    const rawTask = (taskInputRef.current?.value  ?? task).trim();
+    if (rawUrl  !== url)  setUrl(rawUrl);
+    if (rawTask !== task) setTask(rawTask);
 
-    let urlValue = url.trim();
+    let urlValue = rawUrl;
     if (!urlValue || selectedTests.length === 0) {
       setError(urlValue ? "Please select at least one test." : "Please enter a URL.");
       return;
     }
-    // Auto-prepend https:// if the user omitted the protocol
     if (!/^https?:\/\//i.test(urlValue)) {
       urlValue = `https://${urlValue}`;
     }
 
-    const settings = { task, selectedTests, wcagVersion };
+    const taskValue = rawTask || "Navigate and use the main features of this website";
+    const settings = { task: taskValue, selectedTests, wcagVersion };
     lastSettingsRef.current = settings;
     analytics.auditStarted(urlValue, selectedTests, wcagVersion);
     runAudit(urlValue, settings);
+  }
+
+  // ── Form submit (kept as belt-and-suspenders for Enter key in inputs) ─────────
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    doSubmit();
   }
 
   // ── Retry (same URL + settings) ──────────────────────────────────────────────
@@ -229,34 +245,32 @@ wcag_version: settings.wcagVersion,
             </p>
           </div>
 
-          {error && (
-            <div
-              className="rounded-lg p-3 text-sm"
-              style={{
-                background: "rgba(255,51,102,0.1)",
-                border: "1px solid rgba(255,51,102,0.3)",
-                color: "var(--crimson)",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
           <div className="space-y-2">
             <label htmlFor="url" className="block text-sm font-medium" style={{ color: "var(--text)" }}>
               Website URL <span style={{ color: "var(--crimson)" }} aria-hidden="true">*</span>
             </label>
             <input
+              ref={urlInputRef}
               id="url"
               type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              defaultValue={url}
+              onChange={(e) => { setUrl(e.target.value); setError(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doSubmit(); } }}
               placeholder="https://example.com"
               className="w-full rounded-lg px-4 py-2.5 text-sm transition-colors"
-              style={{ ...inputStyle, borderColor: "var(--border)" }}
+              style={{
+                ...inputStyle,
+                borderColor: error && !url.trim() ? "var(--crimson)" : "var(--border)",
+                boxShadow: error && !url.trim() ? "0 0 0 2px rgba(255,51,102,0.25)" : "none",
+              }}
               onFocus={(e) => (e.target.style.borderColor = "var(--lime)")}
-              onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+              onBlur={(e) => (e.target.style.borderColor = error && !url.trim() ? "var(--crimson)" : "var(--border)")}
             />
+            {error && !url.trim() && (
+              <p className="text-xs font-medium mt-1" style={{ color: "var(--crimson)" }}>
+                ↑ {error}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -295,9 +309,10 @@ wcag_version: settings.wcagVersion,
               </span>
             </label>
             <input
+              ref={taskInputRef}
               id="task"
               type="text"
-              value={task}
+              defaultValue={task}
               onChange={(e) => setTask(e.target.value)}
               className="w-full rounded-lg px-4 py-2.5 text-sm transition-colors"
               style={{ ...inputStyle }}
@@ -308,8 +323,23 @@ wcag_version: settings.wcagVersion,
 
           <TestSelector selected={selectedTests} onChange={setSelectedTests} wcagVersion={wcagVersion} />
 
-<button
-            type="submit"
+          {/* Non-URL errors (e.g. no tests selected) shown near the button */}
+          {error && url.trim() && (
+            <div
+              className="rounded-lg p-3 text-sm"
+              style={{
+                background: "rgba(255,51,102,0.1)",
+                border: "1px solid rgba(255,51,102,0.3)",
+                color: "var(--crimson)",
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={doSubmit}
             className="font-semibold px-6 py-2.5 rounded-lg text-sm transition-opacity hover:opacity-90 cursor-pointer"
             style={{ background: "var(--lime)", color: "#0A0A0B" }}
           >

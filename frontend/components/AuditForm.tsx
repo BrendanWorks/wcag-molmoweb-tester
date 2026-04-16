@@ -23,6 +23,7 @@ const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
   const [events, setEvents] = useState<object[]>([]);
   const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
+  const [blockWarning, setBlockWarning] = useState("");
   const [submittedUrl, setSubmittedUrl] = useState("");
   const [showColdStart, setShowColdStart] = useState(false);
 
@@ -54,6 +55,7 @@ const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
 
     setSubmittedUrl(urlValue);
     setError("");
+    setBlockWarning("");
     setEvents([]);
     setReport(null);
     setShowColdStart(false);
@@ -130,6 +132,10 @@ wcag_version: settings.wcagVersion,
             warnings: s.warnings ?? 0,
             compliancePct: (report.compliance_percentage as number) ?? 0,
           });
+        }
+        if (msg.type === "page_error") {
+          // Surface blocking reason — scan may still finish with empty results
+          setBlockWarning((msg.error ?? msg.message) as string);
         }
         if (msg.type === "error") {
           const errMsg = msg.message as string;
@@ -525,6 +531,24 @@ wcag_version: settings.wcagVersion,
               }}
             >
               <strong>Note:</strong> {error}
+            </div>
+          )}
+
+          {blockWarning && (
+            <div
+              className="rounded-xl p-4 text-sm space-y-1"
+              style={{
+                background: "rgba(255,51,102,0.07)",
+                border: "1px solid rgba(255,51,102,0.3)",
+              }}
+            >
+              <p className="font-semibold" style={{ color: "var(--crimson)" }}>
+                ⛔ Site blocked automated access
+              </p>
+              <p style={{ color: "var(--muted)" }}>{blockWarning}</p>
+              <p className="text-xs" style={{ color: "var(--muted)", opacity: 0.7 }}>
+                Results below (if any) are unreliable. Try a publicly accessible URL that does not require login or CAPTCHA verification.
+              </p>
             </div>
           )}
 

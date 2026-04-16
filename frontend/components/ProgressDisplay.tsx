@@ -235,6 +235,13 @@ export default function ProgressDisplay({ events, showColdStart, onCancel }: Pro
               </p>
             );
           }
+          if (ev.type === "page_error") {
+            return (
+              <p key={i} style={{ color: "var(--crimson)", fontWeight: "bold" }}>
+                ⛔ {(ev as unknown as Record<string, unknown>).error as string}
+              </p>
+            );
+          }
           return null;
         })}
         <div ref={bottomRef} />

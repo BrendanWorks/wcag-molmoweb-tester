@@ -107,23 +107,47 @@ _CAPTCHA_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that appear in the visible text of bot-wall / error pages.
+# Checked against document.body.innerText after the page settles.
+_BLOCKED_BODY_RE = re.compile(
+    r"\b(enable javascript|javascript is (required|disabled)|"
+    r"you have been blocked|access denied|403 forbidden|"
+    r"checking your browser|please enable cookies|"
+    r"ray id|ddos protection by|sorry, you have been blocked|"
+    r"this site is protected|bot protection|human verification)\b",
+    re.IGNORECASE,
+)
 
-async def _detect_captcha(page: "Page", requested_url: str) -> str | None:
+
+async def _detect_captcha(
+    page: "Page",
+    requested_url: str,
+    http_status: int | None = None,
+) -> str | None:
     """
     Return a human-readable reason string if the loaded page looks like a
     CAPTCHA / bot-wall, or None if the page appears to be the real site.
 
-    Three checks (any match → blocked):
-      1. Current URL redirected to a known challenge domain/path.
-      2. Page title contains bot-wall keywords.
-      3. Known CAPTCHA widget selectors present in the DOM.
+    Checks (any match → blocked):
+      1. HTTP response status >= 400.
+      2. Current URL redirected to a known challenge domain/path.
+      3. Page title contains bot-wall keywords.
+      4. Known CAPTCHA widget selectors present in the DOM.
+      5. Page body text contains bot-wall keywords (catches IP-level blocks
+         that serve a thin 200-status error page with no CAPTCHA widgets).
+      6. Page body is suspiciously thin AND has almost no interactive elements
+         (catches blank shell pages served to datacenter IPs).
     """
-    # 1. URL check
+    # 1. HTTP status check
+    if http_status is not None and http_status >= 400:
+        return f"HTTP {http_status} error response"
+
+    # 2. URL check
     current_url = page.url
     if _CAPTCHA_URL_RE.search(current_url):
         return f"redirected to challenge URL ({current_url})"
 
-    # 2. Title check
+    # 3. Title check
     try:
         title = await page.title()
         if _CAPTCHA_TITLE_RE.search(title):
@@ -131,7 +155,7 @@ async def _detect_captcha(page: "Page", requested_url: str) -> str | None:
     except Exception:
         pass
 
-    # 3. DOM selector check
+    # 4. DOM selector check
     try:
         selector_js = " || ".join(
             f'!!document.querySelector("{sel}")'
@@ -140,6 +164,34 @@ async def _detect_captcha(page: "Page", requested_url: str) -> str | None:
         found = await page.evaluate(f"() => {{ return {selector_js}; }}")
         if found:
             return "CAPTCHA widget detected in DOM"
+    except Exception:
+        pass
+
+    # 5. Body text keyword check (catches thin IP-blocked pages)
+    try:
+        body_text = await page.evaluate(
+            "() => (document.body?.innerText ?? '').trim()"
+        )
+        if _BLOCKED_BODY_RE.search(body_text):
+            return "page body contains bot-wall text"
+    except Exception:
+        pass
+
+    # 6. Suspiciously empty page check: very short body + almost no interactives
+    # (a real page will have headings, links, buttons; a block page is near-empty)
+    try:
+        stats = await page.evaluate("""() => ({
+            textLen: (document.body?.innerText ?? '').trim().length,
+            interactive: document.querySelectorAll(
+                'a[href], button, input, select, textarea, [role="button"]'
+            ).length,
+        })""")
+        if stats["textLen"] < 300 and stats["interactive"] < 3:
+            return (
+                f"page appears empty (body text: {stats['textLen']} chars, "
+                f"interactive elements: {stats['interactive']}) — "
+                "likely blocked or login-required"
+            )
     except Exception:
         pass
 
@@ -328,8 +380,11 @@ async def _scan_page(
 
     yield {"type": "page_start", "url": page_url, "depth": depth}
 
+    _http_status: int | None = None
     try:
-        await page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
+        _resp = await page.goto(page_url, wait_until="domcontentloaded", timeout=30_000)
+        if _resp is not None:
+            _http_status = _resp.status
         await asyncio.sleep(1.5)  # let JS-heavy SPAs settle
         await _dismiss_overlays(page)
     except Exception as e:
@@ -337,7 +392,7 @@ async def _scan_page(
         return
 
     # ── CAPTCHA / bot-wall guard ──────────────────────────────────────────────
-    captcha_reason = await _detect_captcha(page, page_url)
+    captcha_reason = await _detect_captcha(page, page_url, http_status=_http_status)
     if captcha_reason:
         yield {
             "type": "page_error",

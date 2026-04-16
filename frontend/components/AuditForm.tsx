@@ -545,23 +545,30 @@ wcag_version: settings.wcagVersion,
 
           {blockWarning && (
             <div
-              className="rounded-xl p-4 text-sm space-y-1"
+              className="rounded-xl p-4 text-sm space-y-2"
               style={{
                 background: "rgba(255,51,102,0.07)",
                 border: "1px solid rgba(255,51,102,0.3)",
               }}
             >
               <p className="font-semibold" style={{ color: "var(--crimson)" }}>
-                ⛔ Site blocked automated access
+                ⛔ This site likely blocked automated access
               </p>
-              <p style={{ color: "var(--muted)" }}>{blockWarning}</p>
-              <p className="text-xs" style={{ color: "var(--muted)", opacity: 0.7 }}>
-                Results below (if any) are unreliable. Try a publicly accessible URL that does not require login or CAPTCHA verification.
+              <p style={{ color: "var(--muted)" }}>
+                The scanner was probably stopped by bot protection or a CAPTCHA challenge before
+                it could collect valid test data. Any results shown below are not meaningful.
+              </p>
+              <p style={{ color: "var(--muted)" }}>
+                <span className="font-medium" style={{ color: "var(--text)" }}>Accessibility note:</span>{" "}
+                Sites that rely on visual-only CAPTCHAs may themselves fail{" "}
+                <span className="font-mono text-xs" style={{ color: "var(--lime)" }}>WCAG 2.1 SC 1.1.1</span>{" "}
+                (Non-text Content) — challenge images without an accessible text alternative or
+                audio equivalent exclude users who rely on assistive technology.
               </p>
             </div>
           )}
 
-          {report && <ResultsDashboard report={report} url={submittedUrl} />}
+          {report && <ResultsDashboard report={report} url={submittedUrl} blocked={!!blockWarning} />}
 
           <button
             onClick={handleReset}

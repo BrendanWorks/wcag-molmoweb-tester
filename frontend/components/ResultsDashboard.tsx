@@ -123,9 +123,11 @@ const card = {
 export default function ResultsDashboard({
   report,
   url,
+  blocked = false,
 }: {
   report: Record<string, unknown>;
   url: string;
+  blocked?: boolean;
 }) {
   const r = report as unknown as Report;
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
@@ -191,12 +193,14 @@ export default function ResultsDashboard({
               {r.compliance_percentage}%
             </p>
             <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>Compliance</p>
-            <span
-              className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full mt-1.5"
-              style={{ color: status.color, background: status.bg }}
-            >
-              {status.label}
-            </span>
+            {!blocked && (
+              <span
+                className="inline-block text-xs font-semibold px-2.5 py-1 rounded-full mt-1.5"
+                style={{ color: status.color, background: status.bg }}
+              >
+                {status.label}
+              </span>
+            )}
           </div>
         </div>
 
@@ -244,8 +248,8 @@ export default function ResultsDashboard({
         </div>
       </div>
 
-      {/* ── OLMo3 narrative ── */}
-      {r.narrative && (
+      {/* ── OLMo3 narrative — suppressed when block was detected (no valid data) ── */}
+      {r.narrative && !blocked && (
         <div style={card} className="p-5">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--muted)" }}>

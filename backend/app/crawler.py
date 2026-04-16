@@ -752,7 +752,16 @@ class SiteCrawler:
                 if url in visited:
                     continue
                 if not _robots_allows(robots, url):
-                    yield {"type": "status", "message": f"Skipping {url} (robots.txt)"}
+                    yield {
+                        "type": "page_error",
+                        "url": url,
+                        "error": (
+                            f"⛔ {url} is blocked by the site's robots.txt. "
+                            "The site has asked automated tools not to access this URL. "
+                            "Results cannot be generated — try a URL the site permits crawling, "
+                            "or contact the site owner."
+                        ),
+                    }
                     continue
 
                 visited.add(url)

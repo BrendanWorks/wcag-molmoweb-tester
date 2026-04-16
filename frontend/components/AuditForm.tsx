@@ -120,6 +120,15 @@ wcag_version: settings.wcagVersion,
               }
             });
           }
+          // If no pages were scanned and no specific warning was set yet,
+          // surface a generic "nothing was tested" message
+          const pagesScanned = (report.pages_scanned as number) ?? 0;
+          if (pagesScanned === 0) {
+            setBlockWarning((prev) =>
+              prev ||
+              "No pages could be scanned. The site may block automated access, require login, or disallow crawling via robots.txt."
+            );
+          }
           setReport(report);
           setPhase("done");
           ws.close();

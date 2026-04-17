@@ -191,7 +191,19 @@ The tool was validated against five external sites to confirm real catches, expo
 - **Contrast false negative** — `getEffectiveBg()` was skipping `rgba(0,0,0,0)` transparent elements. Rewrote to composite alpha layers up the full DOM tree, catching contrast failures on elements with inherited backgrounds.
 - **Keyboard false negative** — tab traversal alone missed JS-only links. Added `KEYBOARD_STATIC_JS` pre-scan for `javascript:` hrefs, `onclick` on non-interactive elements, `onmouseover` without `onfocus`, and missing skip navigation.
 
-**GDS Accessibility Tool Audit** — the UK Government Digital Service's benchmark page, built to contain every common failure. Lighthouse scored it 56/100 (19 failures); Axe found 22 violations. PointCheck failed all 6 test dimensions, confirming every test category fires correctly on a page designed to break all of them. The 5 dynamic test categories (zoom, color blindness, MolmoWeb focus, keyboard behavior, form errors) all fired on real failures that neither Lighthouse nor Axe detected.
+**GDS Accessibility Tool Audit** — the UK Government Digital Service's benchmark page, built to contain every common failure. Lighthouse scored it 56/100 (19 failures); Axe found 22 violations. PointCheck failed all 6 test dimensions, confirming every test category fires correctly on a page designed to break all of them.
+
+Lighthouse and Axe work by parsing the DOM and applying static rules — they read the HTML and computed styles, not the rendered screen. Five of PointCheck's six test categories require actually driving the browser: zooming the viewport, applying a color filter, pressing Tab and observing what gets focus, submitting a form and reading the error state. These are not gaps in Lighthouse or Axe's rule sets; they are outside the scope of what a DOM-only analysis can do.
+
+| Test category | Lighthouse (56/100, 19 failures) | Axe (22 violations) | PointCheck |
+|---|---|---|---|
+| Page structure & semantics | ✓ Missing alt text, unlabeled inputs, heading order | ✓ Missing alt text, unlabeled inputs, ARIA errors | ✓ All of the above |
+| Color & contrast | ✓ Low-contrast text (static computed styles) | ✓ Low-contrast text (static computed styles) | ✓ Contrast failures under Deuteranopia simulation |
+| 200% zoom / reflow | — DOM-only; cannot resize and observe overflow | — DOM-only; cannot resize and observe overflow | ✓ Detected horizontal scroll and clipped text at 200% zoom |
+| Color blindness simulation | — Cannot apply vision filters to the rendered page | — Cannot apply vision filters to the rendered page | ✓ Detected failures visible only under Deuteranopia filter |
+| Focus visibility (visual) | — Can read `outline: none` in CSS; cannot see screen | — Can read `outline: none` in CSS; cannot see screen | ✓ MolmoWeb-8B located focused element by pixel coordinate; Molmo-7B-D confirmed ring absent on screen |
+| Keyboard navigation | Partial — flags missing `tabindex` and skip links in DOM | Partial — flags missing `tabindex` and skip links in DOM | ✓ Drove real Tab presses; detected JS-only links and mouse-only handlers unreachable by keyboard |
+| Form error handling | Partial — flags unlabeled inputs statically | Partial — flags unlabeled inputs statically | ✓ Submitted invalid data; confirmed error messages absent, non-descriptive, or not associated with inputs |
 
 **Mars Commuter** — keyboard JS links detected, contrast failures caught, 5 unlabeled form fields identified. Zoom correctly passed. Tool handled iframe focus issues correctly.
 

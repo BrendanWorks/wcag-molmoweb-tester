@@ -258,14 +258,14 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - Modal `Dict` persistence: completed jobs written to `modal.Dict("pointcheck-jobs")` at scan completion; permalinks survive container restarts and cold starts
 - "Share results" button with chain-link icon, right-justified, lime-tinted, `@keyframes` flash + scale animation on copy
 - Molmo2TextModel read-only property patch (upstream HF model change; try/catch/patch/retry pattern, same as existing OLMo3 fix)
+- WCAG criterion numbers in results dashboard link to W3C Understanding docs; version selector (2.1/2.2) routes to correct spec; 2.2-only criteria always use WCAG22 path
+- Two-phase progress bar: indeterminate lime shimmer during cold start → determinate fill driven by `test_start` events (16.7% per test); current test name shown below bar; `done` snaps to 100%
+- `robots.txt` false-positive fix: `_build_robots_parser` now manually fetches with `urllib`, only parses on HTTP 200; non-200 and network errors log internally and proceed — only an explicit `Disallow` blocks the scan; regression suite updated (discord.com was a false positive, now verified accessible)
 
 ### Backlog
 - **Supabase migration** — move job store from Modal Dict to Supabase for proper relational history, user accounts, and analytics
 - **Scan history** — localStorage-backed list of recent scans with permalinks
-- **WCAG criterion links** — each `1.1.1` etc. links to its WCAG Understanding doc
-- **Scan progress bar** — `test_start` event count vs expected total; replace spinner with % bar
 - **Re-run button** — "Scan again" resets form state without navigating away
-- **robots.txt nuance** — distinguish "explicitly disallowed" vs "fetch failed"; proceed on fetch failure instead of blocking
 
 ---
 

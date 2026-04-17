@@ -215,6 +215,48 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 
 ---
 
+## Sprint History
+
+### Sprint 1 — Foundation (Apr 1–7)
+- Next.js 16 frontend: URL input, WCAG 2.1/2.2 version selector, live WebSocket progress feed
+- FastAPI backend with WebSocket streaming (`test_start` → `result` → `done` event flow)
+- MolmoWeb-8B integration with four Transformers 5.x compat patches (ROPE, ProcessorMixin, `cache_position`, `_validate_model_kwargs`)
+- Six WCAG test classes: keyboard navigation, 200% zoom, color/contrast, focus visibility, form errors, page structure
+- Playwright headless browser automation; screenshots embedded as base64 in result events
+- Modal deployment on A100-40GB; model weights baked into image at build time
+
+### Sprint 2 — Architecture & Models (Apr 7–14)
+- Rearchitected to `backend/app/` as deployed stack with BFS site crawler
+- Two-phase model residency: MolmoWeb-8B + Molmo-7B-D (~20 GB) during visual checks; freed before OLMo-3-7B loads for narrative (~14 GB)
+- Molmo-7B-D-0924 in 4-bit NF4 for screenshot QA — co-resident with MolmoWeb during Phase 1
+- OLMo-3-7B-Instruct executive summary generation
+- WCAG 2.2 support (SC 2.4.11 focus appearance, SC 2.5.8 touch targets)
+- Eval logger (JSONL dataset per run)
+- Initial regression suite (`regression_suite.py`) with known-outcome assertions
+
+### Sprint 3 — Reliability & Sharing (Apr 14–21, current)
+- Bot/CAPTCHA detection: real Chrome user-agent, 6-heuristic detector (HTTP status, URL redirect, title keywords, 18 DOM selectors, body text, empty-page)
+- `robots.txt` blocks emit `page_error` events with descriptive messages; frontend shows block warning banner
+- OLMo guard: skips 14 GB model load when `pages_scanned == 0`
+- Confidence tier badges per test result (`● high` / `◐ med` / `○ low`), derived from `details` fields — no backend change
+- Sequential regression suite execution (fixed multi-container A100 OOM; was `asyncio.gather`, now sequential loop)
+- `debug_scan.py` single-case WebSocket diagnostic tool
+- PDF export rebuilt to match on-screen report: confidence tiers, overall status badge, focus indicator per-step detail, page structure issue breakdown
+- Shareable permalinks: `?job=<id>` URL param → `GET /api/crawl/{id}` → full report rendered directly
+- Modal `Dict` persistence: completed jobs written to `modal.Dict("pointcheck-jobs")` at scan completion; permalinks survive container restarts and cold starts
+- "Share results" button with chain-link icon, right-justified, lime-tinted, `@keyframes` flash + scale animation on copy
+- Molmo2TextModel read-only property patch (upstream HF model change; try/catch/patch/retry pattern, same as existing OLMo3 fix)
+
+### Backlog
+- **Supabase migration** — move job store from Modal Dict to Supabase for proper relational history, user accounts, and analytics
+- **Scan history** — localStorage-backed list of recent scans with permalinks
+- **WCAG criterion links** — each `1.1.1` etc. links to its WCAG Understanding doc
+- **Scan progress bar** — `test_start` event count vs expected total; replace spinner with % bar
+- **Re-run button** — "Scan again" resets form state without navigating away
+- **robots.txt nuance** — distinguish "explicitly disallowed" vs "fetch failed"; proceed on fetch failure instead of blocking
+
+---
+
 ## Built With
 
 - [Allen AI MolmoWeb-8B](https://huggingface.co/allenai/MolmoWeb-8B) — open-source VLM for browser navigation and visual pointing

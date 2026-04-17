@@ -121,15 +121,20 @@ async def run_case(base_url: str, case: dict) -> dict:
     events       = []
     page_errors  = []
     report       = {}
+    terminal_event = None   # the event type that ended the loop
     t0 = time.time()
 
     try:
         async with websockets.connect(ws_url, open_timeout=30, ping_timeout=60) as ws:
             while True:
                 try:
-                    raw = await asyncio.wait_for(ws.recv(), timeout=360)
+                    # 480 s per-message timeout — model loading takes ~90 s and
+                    # keepalives fire every 20 s, so this should never be hit under
+                    # normal conditions.  It's a safety net for hung containers.
+                    raw = await asyncio.wait_for(ws.recv(), timeout=480)
                 except asyncio.TimeoutError:
                     events.append({"type": "timeout"})
+                    terminal_event = {"type": "timeout"}
                     break
                 msg = json.loads(raw)
                 events.append(msg)
@@ -139,16 +144,18 @@ async def run_case(base_url: str, case: dict) -> dict:
 
                 if msg.get("type") in ("done", "error"):
                     report = msg.get("report", {})
+                    terminal_event = msg
                     break
     except Exception as exc:
         return {"label": label, "error": str(exc), "events": events}
 
     return {
-        "label":       label,
-        "elapsed":     round(time.time() - t0),
-        "events":      events,
-        "page_errors": page_errors,
-        "report":      report,
+        "label":          label,
+        "elapsed":        round(time.time() - t0),
+        "events":         events,
+        "page_errors":    page_errors,
+        "report":         report,
+        "terminal_event": terminal_event,
     }
 
 # ── Assertion evaluator ───────────────────────────────────────────────────────
@@ -205,9 +212,17 @@ async def main(base_url: str):
     print(f"  Cases   : {len(CASES)}")
     print(f"{'═'*64}\n")
 
-    # Run all cases concurrently
-    tasks   = [run_case(base_url, c) for c in CASES]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # Run cases SEQUENTIALLY — each scan needs the full A100 (40 GB VRAM) to
+    # itself.  Running concurrently causes 3 × 16 GB model loads → OOM on the
+    # 40 GB GPU, producing silent "error" events instead of real scan results.
+    # Sequential run takes ~450 s total (3 × ~150 s) which is acceptable for CI.
+    results = []
+    for case in CASES:
+        try:
+            result = await run_case(base_url, case)
+        except Exception as exc:
+            result = exc
+        results.append(result)
 
     all_passed = True
 
@@ -226,6 +241,26 @@ async def main(base_url: str):
             continue
 
         print(f"   elapsed: {result.get('elapsed', '?')}s")
+
+        # Show what event ended the WS loop — critical for diagnosing
+        # "error" vs "done" vs "timeout" termination
+        te = result.get("terminal_event") or {}
+        te_type = te.get("type", "none")
+        if te_type == "error":
+            print(f"   ⚠️  TERMINAL EVENT: error — {te.get('message','')[:100]}")
+        elif te_type == "timeout":
+            print(f"   ⚠️  TERMINAL EVENT: timeout (>360s between messages)")
+        elif te_type == "done":
+            print(f"   ✓  TERMINAL EVENT: done")
+        else:
+            print(f"   ?  TERMINAL EVENT: {te_type}")
+
+        # Show event type distribution for any failed assertions
+        type_counts: dict[str, int] = {}
+        for ev in result.get("events", []):
+            t = ev.get("type", "?")
+            type_counts[t] = type_counts.get(t, 0) + 1
+        print(f"   events: {dict(sorted(type_counts.items()))}")
 
         outcomes = evaluate(case, result)
         for o in outcomes:

@@ -7,7 +7,7 @@ import ResultsDashboard from "@/components/ResultsDashboard";
 import { useWcagVersion } from "@/components/WcagVersionProvider";
 import { analytics } from "@/lib/analytics";
 
-type Phase = "form" | "running" | "done";
+type Phase = "form" | "running" | "done" | "loading";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
@@ -36,6 +36,34 @@ const { version: wcagVersion, setVersion: setWcagVersion } = useWcagVersion();
   // Native DOM refs — read input values directly to bypass React 19 synthetic event issues
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const taskInputRef = useRef<HTMLInputElement | null>(null);
+
+  // ── Permalink: load report from ?job= URL param on mount ────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get("job");
+    if (!jobId) return;
+
+    setPhase("loading");
+    fetch(`${API_BASE}/api/crawl/${encodeURIComponent(jobId)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 404 ? "Report not found — it may have expired." : `Server error ${res.status}`);
+        return res.json();
+      })
+      .then((jobState: Record<string, unknown>) => {
+        if (jobState.status !== "complete" || !jobState.report) {
+          throw new Error("This report is not yet complete or is no longer available.");
+        }
+        const r = jobState.report as Record<string, unknown>;
+        setReport(r);
+        setSubmittedUrl((r.url ?? jobState.url ?? "") as string);
+        setPhase("done");
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+        setPhase("done");
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -229,6 +257,9 @@ wcag_version: settings.wcagVersion,
     if (phase === "running") analytics.auditCancelled(submittedUrl);
     wsRef.current?.close();
     if (coldStartTimerRef.current) clearTimeout(coldStartTimerRef.current);
+    // Remove ?job= param so the form is clean
+    const clean = window.location.pathname;
+    window.history.replaceState(null, "", clean);
     setPhase("form");
     setEvents([]);
     setReport(null);
@@ -474,6 +505,18 @@ wcag_version: settings.wcagVersion,
             </div>
           </section>
 
+        </div>
+      )}
+
+      {/* ── Loading permalink ── */}
+      {phase === "loading" && (
+        <div className="flex flex-col items-center justify-center gap-4 py-24">
+          <div
+            className="w-8 h-8 rounded-full border-2 border-t-transparent animate-spin"
+            style={{ borderColor: "var(--lime)", borderTopColor: "transparent" }}
+            aria-label="Loading report"
+          />
+          <p className="text-sm" style={{ color: "var(--muted)" }}>Loading report…</p>
         </div>
       )}
 

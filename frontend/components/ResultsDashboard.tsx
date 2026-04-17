@@ -71,6 +71,7 @@ interface CriteriaFailure {
 
 interface Report {
   run_id: string;
+  job_id?: string;
   url: string;
   generated_at: string;
   wcag_version?: string;
@@ -188,6 +189,7 @@ export default function ResultsDashboard({
 }) {
   const r = report as unknown as Report;
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
+  const [copyLabel, setCopyLabel] = useState("Copy link");
   const status = STATUS_STYLE[r.overall_status] ?? STATUS_STYLE.issues_found;
 
   function downloadJson() {
@@ -219,6 +221,16 @@ export default function ResultsDashboard({
   function downloadPdf() {
     analytics.reportDownloaded("pdf");
     generatePdf(report);
+  }
+
+  function copyPermalink() {
+    const jobId = r.run_id ?? r.job_id;
+    if (!jobId) return;
+    const link = `${window.location.origin}/?job=${jobId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopyLabel("Copied!");
+      setTimeout(() => setCopyLabel("Copy link"), 2000);
+    });
   }
 
   const complianceColor =
@@ -301,6 +313,14 @@ export default function ResultsDashboard({
             style={{ background: "rgba(204,255,0,0.1)", border: "1px solid rgba(204,255,0,0.25)", color: "var(--lime)" }}
           >
             Download PDF
+          </button>
+          <button
+            onClick={copyPermalink}
+            title="Link is session-scoped — valid while the backend container is alive"
+            className="text-xs rounded-lg px-3 py-1.5 transition-opacity hover:opacity-80"
+            style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--muted)" }}
+          >
+            {copyLabel}
           </button>
         </div>
       </div>

@@ -27,6 +27,8 @@ from __future__ import annotations
 import asyncio
 import re
 import time
+import urllib.error
+import urllib.request
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -294,17 +296,58 @@ _SKIP_EXTENSIONS = {
 }
 
 
-# ── Robots.txt cache ──────────────────────────────────────────────────────────
+# ── Robots.txt ────────────────────────────────────────────────────────────────
 
 def _build_robots_parser(base_url: str) -> Optional[RobotFileParser]:
+    """
+    Fetch and parse robots.txt for *base_url*.
+
+    Returns a RobotFileParser **only** when the file was successfully
+    retrieved (HTTP 200) and parsed.  Returns None — meaning "allow all" —
+    for every other outcome: network error, DNS failure, timeout, non-200
+    status code (404, 401, 403, …).
+
+    Python's stdlib RobotFileParser.read() sets disallow_all=True on 401/403,
+    which would falsely block sites whose robots.txt is behind auth or simply
+    missing.  By doing our own fetch and status check we avoid that false
+    positive entirely.
+    """
     try:
         parsed = urlparse(base_url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+        req = urllib.request.Request(
+            robots_url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; PointCheckBot/1.0)"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status != 200:
+                    print(
+                        f"[robots] {robots_url} returned HTTP {resp.status}"
+                        " — no restrictions applied"
+                    )
+                    return None
+                content = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            print(
+                f"[robots] {robots_url} returned HTTP {exc.code}"
+                " — no restrictions applied"
+            )
+            return None
+        except Exception as exc:
+            print(
+                f"[robots] could not fetch {robots_url} ({exc!r})"
+                " — no restrictions applied"
+            )
+            return None
+
         rp = RobotFileParser()
         rp.set_url(robots_url)
-        rp.read()
+        rp.parse(content.splitlines())
         return rp
-    except Exception:
+
+    except Exception as exc:
+        print(f"[robots] unexpected error for {base_url} ({exc!r}) — no restrictions applied")
         return None
 
 
@@ -756,10 +799,9 @@ class SiteCrawler:
                         "type": "page_error",
                         "url": url,
                         "error": (
-                            f"⛔ {url} is blocked by the site's robots.txt. "
-                            "The site has asked automated tools not to access this URL. "
-                            "Results cannot be generated — try a URL the site permits crawling, "
-                            "or contact the site owner."
+                            f"⛔ {url} is blocked by this site's robots.txt. "
+                            "The site has explicitly asked automated tools not to access this URL. "
+                            "Try a URL the site permits crawling, or contact the site owner."
                         ),
                     }
                     continue

@@ -60,15 +60,20 @@ CASES = [
         ],
     },
     {
-        "label":   "discord.com (bot-blocked / robots.txt)",
+        # discord.com has a publicly accessible robots.txt that does not
+        # explicitly disallow our crawl path.  The old stdlib RobotFileParser
+        # was falsely blocking it (disallow_all on a non-200 response).  This
+        # case verifies that fix: the scan must NOT be blocked by a robots.txt
+        # false positive.  A CAPTCHA block mid-scan is still fine (page_error
+        # may or may not fire depending on their bot-detection), but the key
+        # assertion is that pages_scanned >= 1 — we got past robots.txt.
+        "label":   "discord.com (robots.txt false-positive regression)",
         "url":     "https://discord.com",
         "tests":   ["page_structure"],
         "wcag":    "2.1",
         "assertions": [
-            # Must be blocked — page_error must fire
-            ("page_error_fired", "page_error event must fire"),
-            # No pages should have been scanned
-            ("zero_pages",       "pages_scanned must be 0"),
+            # Must NOT be blocked at the robots.txt stage — page must be reached
+            ("pages_scanned", "pages_scanned must be >= 1 (no false-positive robots.txt block)"),
         ],
     },
     {

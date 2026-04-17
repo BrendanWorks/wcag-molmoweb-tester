@@ -9,12 +9,36 @@ interface StructureIssue {
   fix?: string;
 }
 
+interface FocusStep {
+  tab: number;
+  focus_info?: {
+    tag: string;
+    text: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  analysis: {
+    result: string;
+    layer: string;
+    focused_element: string;
+    css_indicator?: string;
+    molmo2_point?: { x: number; y: number };
+    failure_reason?: string;
+  };
+}
+
 interface TestDetails {
   molmo2_used?: boolean;
   molmo2_warnings?: number;
+  steps?: FocusStep[];
   tabs_tested?: number;
   failure_count?: number;
   issues?: StructureIssue[];
+  critical_count?: number;
+  major_count?: number;
+  minor_count?: number;
   [key: string]: unknown;
 }
 
@@ -56,6 +80,29 @@ interface Report {
   test_summaries: TestSummary[];
 }
 
+// ── Confidence tier ───────────────────────────────────────────────────────────
+type ConfidenceTier = "high" | "medium" | "low";
+
+function getConfidenceTier(ts: TestSummary): ConfidenceTier {
+  const d = ts.details ?? {};
+  switch (ts.test_id) {
+    case "page_structure": return "high";
+    case "zoom":           return "high";
+    case "focus_indicator":
+      if ((d.tabs_tested ?? 0) < 3) return "low";
+      if (d.molmo2_used) return "high";
+      return "medium";
+    case "keyboard_nav":
+      if ((d.tabs_tested ?? 0) >= 5) return "high";
+      if ((d.tabs_tested ?? 0) >= 2) return "medium";
+      return "low";
+    case "color_blindness":
+      return ts.result === "pass" ? "high" : "medium";
+    default:
+      return "medium";
+  }
+}
+
 // ── Brand colors ──────────────────────────────────────────────────────────────
 type RGB = [number, number, number];
 const BG:       RGB = [26,  26,  27];
@@ -68,6 +115,21 @@ const AMBER:    RGB = [255, 184, 0];
 const TEXT:     RGB = [239, 239, 239];
 const MUTED:    RGB = [144, 144, 153];
 const ORANGE:   RGB = [255, 120, 0];
+const TEAL:     RGB = [110, 231, 183]; // high confidence
+
+// Confidence tier colors: [fg, bg, border]
+const CONF_COLORS: Record<ConfidenceTier, { fg: RGB; bg: RGB; bd: RGB; label: string }> = {
+  high:   { fg: TEAL,   bg: [15, 40, 25],  bd: [40, 90, 60],  label: "* high" },
+  medium: { fg: MUTED,  bg: SURFACE2,      bd: BORDER,         label: "~ med"  },
+  low:    { fg: AMBER,  bg: [25, 18, 0],   bd: [70, 50, 0],    label: "o low"  },
+};
+
+// Status badge colors
+const STATUS_COLORS: Record<string, { fg: RGB; bg: RGB; label: string }> = {
+  compliant:       { fg: LIME,    bg: [12, 25, 0],  label: "Compliant"       },
+  issues_found:    { fg: AMBER,   bg: [25, 18, 0],  label: "Issues Found"    },
+  critical_issues: { fg: CRIMSON, bg: [25, 5, 10],  label: "Critical Issues" },
+};
 
 // ── Page layout ───────────────────────────────────────────────────────────────
 const PW = 210;
@@ -216,15 +278,18 @@ export function generatePdf(report: Record<string, unknown>): void {
   textC(MUTED);
   doc.text("Compliance", ML, y + 20);
 
-  y += 26;
+  // Overall status badge — matches the pill shown in the UI header
+  const statusEntry = STATUS_COLORS[r.overall_status] ?? STATUS_COLORS.issues_found;
+  pill(sanitize(statusEntry.label), ML, y + 25, statusEntry.bg, statusEntry.fg, statusEntry.fg, 7.5);
 
-  // Summary counts — 4 boxes. "Issues Found" (failures) first so the most
-  // visible number matches the overall status without a competing badge nearby.
+  y += 34;
+
+  // Summary counts — 4 boxes matching UI order: Passed / Failed / Warnings / Total
   const counts: Array<{ label: string; value: number; fg: RGB; bg: RGB; bd: RGB }> = [
-    { label: "Issues Found", value: r.summary?.failed       ?? 0, fg: CRIMSON, bg: [25,5,10],  bd: [70,15,25] },
-    { label: "Passed",       value: r.summary?.passed       ?? 0, fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
-    { label: "Warnings",     value: r.summary?.warnings     ?? 0, fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
-    { label: "Total",        value: r.summary?.total_tests  ?? 0, fg: TEXT,    bg: SURFACE2,   bd: BORDER     },
+    { label: "Passed",   value: r.summary?.passed      ?? 0, fg: LIME,    bg: [12,25,0],  bd: [35,70,0]  },
+    { label: "Failed",   value: r.summary?.failed      ?? 0, fg: CRIMSON, bg: [25,5,10],  bd: [70,15,25] },
+    { label: "Warnings", value: r.summary?.warnings    ?? 0, fg: AMBER,   bg: [25,18,0],  bd: [70,50,0]  },
+    { label: "Total",    value: r.summary?.total_tests ?? 0, fg: TEXT,    bg: SURFACE2,   bd: BORDER     },
   ];
   const boxW = (CW - 9) / 4;
   counts.forEach((ct, i) => {
@@ -368,9 +433,10 @@ export function generatePdf(report: Record<string, unknown>): void {
 
   for (const ts of tests) {
     const rc = RESULT_C[ts.result] ?? RESULT_C.warning;
-    // Color WCAG criterion badges by the test's result
     const critFg: RGB = rc.fg;
     const critBd: RGB = rc.bd;
+    const tier = getConfidenceTier(ts);
+    const cc = CONF_COLORS[tier];
 
     // Pre-split text for accurate card height calculation
     doc.setFontSize(8.5);
@@ -380,11 +446,35 @@ export function generatePdf(report: Record<string, unknown>): void {
     const frLines  = frText  ? doc.splitTextToSize(frText,  CW - 22) : [];
     const recLines = recText ? doc.splitTextToSize(recText, CW - 22) : [];
 
+    // Pre-calculate extra height for focus_indicator detail
+    const focusSteps = ts.test_id === "focus_indicator" && ts.details?.steps
+      ? ts.details.steps.filter((s: FocusStep) => s.analysis.layer === "molmo2_visual").slice(0, 15)
+      : [];
+    const hasFocusDetail = ts.test_id === "focus_indicator" && ts.details != null;
+    const focusDetailH = hasFocusDetail ? 12 + focusSteps.length * 7 + 4 : 0;
+
+    // Pre-calculate extra height for page_structure issue detail
+    const structIssues: StructureIssue[] = ts.test_id === "page_structure" && ts.details?.issues
+      ? (ts.details.issues as StructureIssue[])
+      : [];
+    let structDetailH = 0;
+    if (structIssues.length > 0) {
+      structDetailH = 10; // section label + summary counts
+      for (const issue of structIssues) {
+        const descLines = doc.splitTextToSize(sanitize(issue.description ?? ""), CW - 28);
+        structDetailH += 5 + descLines.length * 4.2;
+        structDetailH += Math.min(3, issue.examples?.length ?? 0) * 4;
+        if (issue.fix) structDetailH += 4.5;
+        structDetailH += 5; // padding between issues
+      }
+    }
+
     let cardH = 7 + 12;
     if ((ts.wcag_criteria?.length ?? 0) > 0) cardH += 8;
-    if (frLines.length > 0)  cardH += 5 + frLines.length  * 4.2 + 3;
-    if (recLines.length > 0) cardH += 5 + recLines.length * 4.2 + 3;
-    if (ts.screenshot_b64)   cardH += IMG_H + 4;
+    if (frLines.length > 0)   cardH += 5 + frLines.length  * 4.2 + 3;
+    if (recLines.length > 0)  cardH += 5 + recLines.length * 4.2 + 3;
+    cardH += focusDetailH + structDetailH;
+    if (ts.screenshot_b64)    cardH += IMG_H + 4;
     cardH += 5;
 
     checkSpace(cardH);
@@ -408,17 +498,28 @@ export function generatePdf(report: Record<string, unknown>): void {
     textC(TEXT);
     doc.text(sanitize(ts.test_name), ML + 14, cy + 1);
 
-    // Severity badge
+    // Severity badge (if fail)
+    let badgeX = ML + 14;
     if (ts.result === "fail" && ts.severity && SEV_C[ts.severity]) {
       const sc = SEV_C[ts.severity];
       doc.setFontSize(9.5);
       const nameW = doc.getTextWidth(sanitize(ts.test_name));
-      pill(sanitize(ts.severity), ML + 14 + nameW + 3, cy + 1.5, sc.bg, sc.fg, sc.bd, 7);
+      badgeX = pill(sanitize(ts.severity), ML + 14 + nameW + 3, cy + 1.5, sc.bg, sc.fg, sc.bd, 7);
+    }
+    // Confidence tier badge — right-justified, matching UI
+    const confLabel = cc.label;
+    doc.setFontSize(7);
+    const confW = doc.getTextWidth(confLabel) + 4;
+    const confX = ML + CW - confW - 2;
+    if (confX > badgeX + 4) {
+      rRect(confX, cy - 2.5, confW, 4.5, cc.bg, cc.bd, 1);
+      textC(cc.fg);
+      doc.text(confLabel, confX + 2, cy + 0.5);
     }
 
     cy += 11;
 
-    // WCAG criteria pills — colored by test result
+    // WCAG criteria pills — lime colored (matching expanded UI view)
     if ((ts.wcag_criteria?.length ?? 0) > 0) {
       let px = ML + 8;
       for (const c of ts.wcag_criteria) {
@@ -463,7 +564,157 @@ export function generatePdf(report: Record<string, unknown>): void {
       cy += recLines.length * 4.2 + 3;
     }
 
-    // Screenshot — no label, just the image with a subtle border
+    // ── Focus indicator: Visual Confirmation detail ───────────────────────────
+    if (hasFocusDetail && ts.details) {
+      const d = ts.details;
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      textC(MUTED);
+      doc.text("VISUAL CONFIRMATION", ML + 8, cy);
+      cy += 5;
+
+      // Method + counts row
+      const methodLabel = d.molmo2_used ? "MolmoWeb-8B" : "CSS only";
+      const methodFg: RGB = d.molmo2_used ? LIME : MUTED;
+      const methodBg: RGB = d.molmo2_used ? [12, 25, 0] : SURFACE2;
+      const methodBd: RGB = d.molmo2_used ? [35, 70, 0] : BORDER;
+      let mx = pill(methodLabel, ML + 8, cy, methodBg, methodFg, methodBd, 6.5);
+      if (d.tabs_tested !== undefined) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        textC(MUTED);
+        doc.text(`${d.tabs_tested} elem checked`, mx + 1, cy);
+        mx += doc.getTextWidth(`${d.tabs_tested} elem checked`) + 4;
+      }
+      if (d.failure_count && (d.failure_count as number) > 0) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        textC(CRIMSON);
+        doc.text(`${d.failure_count} missing`, mx + 1, cy);
+      }
+      cy += 6;
+
+      // Per-step rows (molmo2_visual layer only, up to 15)
+      for (const step of focusSteps) {
+        const found = !!step.analysis.molmo2_point;
+        const rowFg: RGB  = found ? LIME : CRIMSON;
+        const rowBg: RGB  = found ? [10, 20, 5] : [20, 5, 8];
+        const rowBd: RGB  = found ? [30, 60, 10] : [60, 15, 20];
+        rRect(ML + 8, cy - 3.5, CW - 16, 6, rowBg, rowBd, 1);
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "bold");
+        textC(rowFg);
+        doc.text(`Tab ${step.tab}`, ML + 10, cy);
+        doc.setFont("helvetica", "normal");
+        textC(TEXT);
+        const elemText = sanitize(step.analysis.focused_element ?? "").slice(0, 40);
+        doc.text(elemText, ML + 22, cy);
+        if (found && step.analysis.molmo2_point) {
+          textC(LIME);
+          doc.text(`(${step.analysis.molmo2_point.x},${step.analysis.molmo2_point.y})px`, ML + CW - 18, cy, { align: "right" });
+        } else {
+          textC(CRIMSON);
+          doc.text("not found", ML + CW - 18, cy, { align: "right" });
+        }
+        cy += 7;
+      }
+      cy += 2;
+    }
+
+    // ── Page structure: Issues Found detail ───────────────────────────────────
+    if (structIssues.length > 0 && ts.details) {
+      const d = ts.details;
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      textC(MUTED);
+      doc.text("ISSUES FOUND", ML + 8, cy);
+      cy += 4.5;
+
+      // Severity counts summary
+      let scx = ML + 8;
+      if (d.critical_count && (d.critical_count as number) > 0) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        textC(CRIMSON);
+        doc.text(`${d.critical_count} critical`, scx, cy);
+        scx += doc.getTextWidth(`${d.critical_count} critical`) + 5;
+      }
+      if (d.major_count && (d.major_count as number) > 0) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        textC(ORANGE);
+        doc.text(`${d.major_count} major`, scx, cy);
+        scx += doc.getTextWidth(`${d.major_count} major`) + 5;
+      }
+      if (d.minor_count && (d.minor_count as number) > 0) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        textC(AMBER);
+        doc.text(`${d.minor_count} minor`, scx, cy);
+      }
+      cy += 6;
+
+      // Individual issue blocks
+      for (const issue of structIssues) {
+        const sevColors = SEV_C[issue.severity] ?? SEV_C.minor;
+        const issueDescLines = doc.splitTextToSize(sanitize(issue.description ?? ""), CW - 28);
+        const issueH = 5 + issueDescLines.length * 4.2
+          + Math.min(3, issue.examples?.length ?? 0) * 4
+          + (issue.fix ? 4.5 : 0) + 4;
+        rRect(ML + 8, cy - 1, CW - 16, issueH, sevColors.bg, sevColors.bd, 1.5);
+
+        // Criterion pill + severity label
+        let ipx = ML + 10;
+        doc.setFontSize(6.5);
+        const critW = doc.getTextWidth(issue.criterion) + 4;
+        rRect(ipx, cy + 0.5, critW, 4.5, SURFACE2, BORDER, 1);
+        textC(LIME);
+        doc.text(issue.criterion, ipx + 2, cy + 3.5);
+        ipx += critW + 3;
+        doc.setFont("helvetica", "bold");
+        textC(sevColors.fg);
+        doc.text(sanitize(issue.severity), ipx, cy + 3.5);
+        cy += 7;
+
+        // Description
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        textC(TEXT);
+        doc.text(issueDescLines, ML + 10, cy);
+        cy += issueDescLines.length * 4.2;
+
+        // Examples (up to 3)
+        if (issue.examples && issue.examples.length > 0) {
+          const exShown = issue.examples.slice(0, 3);
+          for (const ex of exShown) {
+            doc.setFontSize(6.5);
+            doc.setFont("helvetica", "normal");
+            textC(MUTED);
+            const exText = sanitize(`· ${ex}`).slice(0, 80);
+            doc.text(exText, ML + 10, cy);
+            cy += 4;
+          }
+          if (issue.examples.length > 3) {
+            textC(MUTED);
+            doc.text(`+ ${issue.examples.length - 3} more`, ML + 10, cy);
+            cy += 4;
+          }
+        }
+
+        // Fix hint
+        if (issue.fix) {
+          doc.setFontSize(6.5);
+          doc.setFont("helvetica", "italic");
+          textC(MUTED);
+          doc.text(sanitize(`Fix: ${issue.fix}`).slice(0, 90), ML + 10, cy);
+          cy += 4.5;
+        }
+
+        cy += 3; // spacing between issues
+      }
+    }
+
+    // Screenshot
     if (ts.screenshot_b64) {
       try {
         drawC(BORDER);

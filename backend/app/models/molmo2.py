@@ -218,20 +218,33 @@ class MolmoQAAnalyzer:
         # Molmo-7B-D's trust_remote_code generation loop does past_key_values[i]
         # (tuple-style access). Transformers 5.x returns a DynamicCache object
         # which is not subscriptable by default → TypeError.
-        # Fix: add __getitem__ / __len__ / __iter__ to DynamicCache globally,
-        # but only if they're not already there (safe to patch on any version).
+        #
+        # Root cause of the 'key_cache' AttributeError (observed in Transformers 5.5.3):
+        # DynamicCache only initializes self.key_cache / self.value_cache after the
+        # first update() call. A freshly created cache in prepare_inputs_for_generation
+        # has neither attribute yet. The previous patch checked
+        # "__getitem__" not in vars(_DC) which is unreliable across Transformers
+        # versions (vars() misses inherited attrs, leading to inconsistent patching).
+        #
+        # Fix: patch unconditionally with getattr-safe lambdas so an uninitialized
+        # cache (no update() calls yet) returns empty sequences rather than raising.
         try:
             from transformers.cache_utils import DynamicCache as _DC
-            if "__getitem__" not in vars(_DC):
-                _DC.__getitem__ = lambda self, idx: (self.key_cache[idx], self.value_cache[idx])
-                _DC.__len__     = lambda self: len(self.key_cache)
-                _DC.__iter__    = lambda self: (
-                    (k, v) for k, v in zip(self.key_cache, self.value_cache)
+            _DC.__getitem__ = lambda self, idx: (
+                (self.key_cache[idx], self.value_cache[idx])
+                if getattr(self, "key_cache", None) is not None
+                   and len(self.key_cache) > idx
+                else ([], [])
+            )
+            _DC.__len__  = lambda self: len(getattr(self, "key_cache", []))
+            _DC.__iter__ = lambda self: (
+                (k, v) for k, v in zip(
+                    getattr(self, "key_cache",   []),
+                    getattr(self, "value_cache", []),
                 )
-                print("[MolmoQAAnalyzer] Patched DynamicCache with tuple-style "
-                      "__getitem__ / __len__ / __iter__")
-            else:
-                print("[MolmoQAAnalyzer] DynamicCache already has __getitem__ — no patch needed")
+            )
+            print("[MolmoQAAnalyzer] Patched DynamicCache with getattr-safe tuple-style "
+                  "__getitem__ / __len__ / __iter__")
         except Exception as _dce:
             print(f"[MolmoQAAnalyzer] DynamicCache patch failed (non-fatal): {_dce}")
 

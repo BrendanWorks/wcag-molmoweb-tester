@@ -29,7 +29,7 @@ KEYBOARD_STATIC_JS = """
     );
     if (jsLinks.length > 0) {
         issues.push({
-            criterion: '2.1.1', severity: 'major',
+            criterion: '2.1.1', severity: 'serious',
             description: `${jsLinks.length} link(s) use javascript: href — unreliable for keyboard/AT users.`,
             examples: jsLinks.slice(0,3).map(a => (a.innerText||a.href).trim().slice(0,120)),
         });
@@ -44,7 +44,7 @@ KEYBOARD_STATIC_JS = """
     });
     if (mouseOnlyEls.length > 0) {
         issues.push({
-            criterion: '2.1.1', severity: 'major',
+            criterion: '2.1.1', severity: 'serious',
             description: `${mouseOnlyEls.length} element(s) have click handlers but are not keyboard-reachable.`,
             examples: mouseOnlyEls.slice(0,3).map(el => (el.innerText||el.tagName).trim().slice(0,120)),
         });
@@ -55,7 +55,7 @@ KEYBOARD_STATIC_JS = """
     );
     if (hoverOnly.length > 0) {
         issues.push({
-            criterion: '2.1.1', severity: 'minor',
+            criterion: '2.1.1', severity: 'moderate',
             description: `${hoverOnly.length} element(s) use onmouseover without an onfocus equivalent.`,
             examples: hoverOnly.slice(0,3).map(el => (el.innerText||el.tagName).trim().slice(0,120)),
         });
@@ -86,7 +86,7 @@ KEYBOARD_STATIC_JS = """
     });
     if (scrollableNotFocusable.length > 0) {
         issues.push({
-            criterion: '2.1.1', severity: 'major',
+            criterion: '2.1.1', severity: 'serious',
             description: `${scrollableNotFocusable.length} scrollable region(s) are not keyboard accessible.`,
             examples: scrollableNotFocusable.slice(0,3).map(el => {
                 const label = (el.getAttribute('aria-label')||el.id||el.className||'').trim().slice(0,40);
@@ -100,7 +100,7 @@ KEYBOARD_STATIC_JS = """
     );
     if (posTabEls.length > 0) {
         issues.push({
-            criterion: '2.4.3', severity: 'major',
+            criterion: '2.4.3', severity: 'serious',
             description: `${posTabEls.length} element(s) use positive tabindex values, disrupting natural tab order.`,
             examples: posTabEls.slice(0,3).map(el => {
                 const tag   = el.tagName.toLowerCase();
@@ -133,8 +133,8 @@ class KeyboardNavTest(BaseWCAGTest):
 
         yield self._progress("Checking for JS-only links and mouse-only handlers...")
         static_issues = await page.evaluate(KEYBOARD_STATIC_JS)
-        static_failures = [i for i in static_issues if i.get("severity") == "major"]
-        static_warnings = [i for i in static_issues if i.get("severity") == "minor"]
+        static_failures = [i for i in static_issues if i.get("severity") in ("critical", "serious")]
+        static_warnings = [i for i in static_issues if i.get("severity") in ("moderate", "minor")]
 
         await page.evaluate("document.activeElement && document.activeElement.blur()")
         await asyncio.sleep(0.3)
@@ -283,7 +283,7 @@ class KeyboardNavTest(BaseWCAGTest):
                     for thought in interactive_result.thoughts:
                         if any(w in thought.lower() for w in ("not focusable", "can't tab", "cannot tab", "keyboard trap", "no focus")):
                             static_failures.append({
-                                "criterion": "2.1.1", "severity": "major",
+                                "criterion": "2.1.1", "severity": "serious",
                                 "description": (
                                     "Interactive navigation element opened by MolmoWeb agent "
                                     f"appears keyboard-inaccessible: {thought}"
@@ -310,7 +310,7 @@ class KeyboardNavTest(BaseWCAGTest):
             wcag = list(dict.fromkeys(i["criterion"] for i in all_failures))
             result = TestResult(
                 test_id=self.TEST_ID, test_name=self.TEST_NAME,
-                result="fail", wcag_criteria=wcag, severity="major",
+                result="fail", wcag_criteria=wcag, severity="serious",
                 failure_reason=failure_reason,
                 recommendation=(
                     "Replace javascript: hrefs with proper event handlers. "

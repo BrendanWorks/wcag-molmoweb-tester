@@ -42,7 +42,7 @@ WCAG_CRITERIA_LABELS: dict[str, str] = {
     "4.1.2": "Name, Role, Value",
 }
 
-SEVERITY_ORDER = {"critical": 0, "major": 1, "minor": 2, "warning": 3}
+SEVERITY_ORDER = {"critical": 0, "serious": 1, "moderate": 2, "minor": 3, "warning": 4}
 
 TEST_LABELS: dict[str, str] = {
     "keyboard_nav":    "Keyboard-Only Navigation",

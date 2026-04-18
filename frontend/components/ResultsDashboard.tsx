@@ -46,8 +46,11 @@ interface TestDetails {
   failure_count?: number;
   issues?: StructureIssue[];
   critical_count?: number;
-  major_count?: number;
+  serious_count?: number;
+  moderate_count?: number;
   minor_count?: number;
+  /** legacy field from pre-rename jobs */
+  major_count?: number;
   [key: string]: unknown;
 }
 
@@ -90,11 +93,14 @@ interface Report {
   test_summaries: TestSummary[];
 }
 
-// ── Severity styling ──────────────────────────────────────────────────────────
+// ── Severity styling (Axe/WCAG impact scale) ──────────────────────────────────
 const SEVERITY_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  critical: { bg: "rgba(255,51,102,0.1)",  color: "var(--crimson)", border: "rgba(255,51,102,0.3)" },
-  major:    { bg: "rgba(255,120,0,0.1)",   color: "#FF7800",        border: "rgba(255,120,0,0.3)" },
-  minor:    { bg: "rgba(255,184,0,0.1)",   color: "var(--amber)",   border: "rgba(255,184,0,0.3)" },
+  critical: { bg: "rgba(255,51,102,0.12)",  color: "var(--crimson)", border: "rgba(255,51,102,0.35)" },
+  serious:  { bg: "rgba(255,100,0,0.12)",   color: "#FF6400",        border: "rgba(255,100,0,0.35)" },
+  moderate: { bg: "rgba(255,184,0,0.12)",   color: "var(--amber)",   border: "rgba(255,184,0,0.35)" },
+  minor:    { bg: "rgba(160,160,160,0.1)",  color: "#9CA3AF",        border: "rgba(160,160,160,0.3)" },
+  // keep legacy alias so old persisted jobs still render
+  major:    { bg: "rgba(255,100,0,0.12)",   color: "#FF6400",        border: "rgba(255,100,0,0.35)" },
 };
 
 const RESULT_STYLE: Record<string, { bg: string; color: string; border: string }> = {
@@ -124,10 +130,11 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }>
 //
 type ConfidenceTier = "high" | "medium" | "low";
 
-const CONFIDENCE_STYLE: Record<ConfidenceTier, { label: string; color: string; bg: string; border: string }> = {
-  high:   { label: "High confidence",   color: "#6EE7B7",                bg: "rgba(110,231,183,0.08)", border: "rgba(110,231,183,0.2)" },
-  medium: { label: "Medium confidence", color: "var(--muted)",           bg: "transparent",            border: "var(--border)" },
-  low:    { label: "Low confidence",    color: "rgba(255,184,0,0.75)",   bg: "rgba(255,184,0,0.06)",   border: "rgba(255,184,0,0.2)" },
+// Confidence uses outlined style (no fill) so it reads as metadata, not severity.
+const CONFIDENCE_STYLE: Record<ConfidenceTier, { label: string; color: string; dot: string; border: string }> = {
+  high:   { label: "high",   color: "#6EE7B7",              dot: "#6EE7B7",              border: "rgba(110,231,183,0.35)" },
+  medium: { label: "med",    color: "var(--muted)",         dot: "var(--muted)",         border: "var(--border)" },
+  low:    { label: "low",    color: "rgba(255,184,0,0.8)",  dot: "rgba(255,184,0,0.8)",  border: "rgba(255,184,0,0.35)" },
 };
 
 const CONFIDENCE_TOOLTIP: Record<ConfidenceTier, string> = {
@@ -423,9 +430,25 @@ export default function ResultsDashboard({
 
       {/* ── Per-test results ── */}
       <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-widest px-1" style={{ color: "var(--muted)" }}>
-          Test Results
-        </h3>
+        <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--muted)" }}>
+            Test Results
+          </h3>
+          {/* Legend */}
+          <div className="flex items-center gap-3 text-xs" style={{ color: "var(--muted)" }}>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(255,51,102,0.12)", color: "var(--crimson)", border: "1px solid rgba(255,51,102,0.35)" }}>Critical</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(255,100,0,0.12)", color: "#FF6400", border: "1px solid rgba(255,100,0,0.35)" }}>Serious</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(255,184,0,0.12)", color: "var(--amber)", border: "1px solid rgba(255,184,0,0.35)" }}>Moderate</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(160,160,160,0.1)", color: "#9CA3AF", border: "1px solid rgba(160,160,160,0.3)" }}>Minor</span>
+              <span style={{ color: "var(--border)" }}>= impact</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-mono" style={{ background: "transparent", color: "#6EE7B7", border: "1px solid rgba(110,231,183,0.35)" }}><span style={{ fontSize: "7px" }}>●</span>high</span>
+              <span style={{ color: "var(--border)" }}>= confidence</span>
+            </span>
+          </div>
+        </div>
         {r.test_summaries?.map((ts) => {
           const rs = RESULT_STYLE[ts.result] ?? RESULT_STYLE.warning;
           const expanded = expandedTest === ts.test_id;
@@ -463,13 +486,14 @@ export default function ResultsDashboard({
                     {ts.severity}
                   </span>
                 )}
-                {/* Confidence tier badge */}
+                {/* Confidence tier badge — outlined only (no fill) so it reads as metadata */}
                 <span
-                  className="hidden sm:inline text-xs px-2 py-0.5 rounded font-mono"
-                  style={{ background: cs.bg, color: cs.color, border: `1px solid ${cs.border}` }}
+                  className="hidden sm:inline flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-mono"
+                  style={{ background: "transparent", color: cs.color, border: `1px solid ${cs.border}` }}
                   title={CONFIDENCE_TOOLTIP[tier]}
                 >
-                  {tier === "high" ? "● high" : tier === "medium" ? "◐ med" : "○ low"}
+                  <span style={{ fontSize: "8px", color: cs.dot }}>●</span>
+                  {cs.label}
                 </span>
                 {ts.wcag_criteria?.map((c) => (
                   <span
@@ -646,11 +670,15 @@ export default function ResultsDashboard({
                         {!!ts.details.critical_count && ts.details.critical_count > 0 && (
                           <span className="font-medium" style={{ color: "var(--crimson)" }}>{ts.details.critical_count} critical</span>
                         )}
-                        {!!ts.details.major_count && ts.details.major_count > 0 && (
-                          <span className="font-medium" style={{ color: "#FF7800" }}>{ts.details.major_count} major</span>
+                        {/* serious_count is the new name; fall back to major_count for old stored jobs */}
+                        {!!((ts.details.serious_count ?? ts.details.major_count) ?? 0) && ((ts.details.serious_count ?? ts.details.major_count) ?? 0) > 0 && (
+                          <span className="font-medium" style={{ color: "#FF6400" }}>{ts.details.serious_count ?? ts.details.major_count} serious</span>
+                        )}
+                        {!!ts.details.moderate_count && ts.details.moderate_count > 0 && (
+                          <span className="font-medium" style={{ color: "var(--amber)" }}>{ts.details.moderate_count} moderate</span>
                         )}
                         {!!ts.details.minor_count && ts.details.minor_count > 0 && (
-                          <span className="font-medium" style={{ color: "var(--amber)" }}>{ts.details.minor_count} minor</span>
+                          <span className="font-medium" style={{ color: "#9CA3AF" }}>{ts.details.minor_count} minor</span>
                         )}
                       </div>
                       <div className="space-y-2">

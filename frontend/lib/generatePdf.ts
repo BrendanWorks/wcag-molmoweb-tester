@@ -37,8 +37,11 @@ interface TestDetails {
   failure_count?: number;
   issues?: StructureIssue[];
   critical_count?: number;
-  major_count?: number;
+  serious_count?: number;
+  moderate_count?: number;
   minor_count?: number;
+  /** legacy field from pre-rename jobs */
+  major_count?: number;
   [key: string]: unknown;
 }
 
@@ -424,9 +427,12 @@ export function generatePdf(report: Record<string, unknown>): void {
     pass: "P", fail: "F", warning: "W", error: "E",
   };
   const SEV_C: Record<string, { fg: RGB; bg: RGB; bd: RGB }> = {
-    critical: { fg: CRIMSON, bg: [25,5,10], bd: [70,15,25] },
-    major:    { fg: ORANGE,  bg: [25,12,0], bd: [70,35,0]  },
-    minor:    { fg: AMBER,   bg: [25,18,0], bd: [70,50,0]  },
+    critical: { fg: CRIMSON,         bg: [25,5,10],  bd: [70,15,25] },
+    serious:  { fg: [255,100,0],     bg: [25,10,0],  bd: [70,30,0]  },
+    moderate: { fg: AMBER,           bg: [25,18,0],  bd: [70,50,0]  },
+    minor:    { fg: [150,150,150],   bg: [18,18,18], bd: [60,60,60] },
+    // legacy alias
+    major:    { fg: [255,100,0],     bg: [25,10,0],  bd: [70,30,0]  },
   };
   const IMG_W = CW - 16;
   const IMG_H = IMG_W / (16 / 9);
@@ -639,17 +645,25 @@ export function generatePdf(report: Record<string, unknown>): void {
         doc.text(`${d.critical_count} critical`, scx, cy);
         scx += doc.getTextWidth(`${d.critical_count} critical`) + 5;
       }
-      if (d.major_count && (d.major_count as number) > 0) {
+      const seriousCount = (d.serious_count ?? d.major_count ?? 0) as number;
+      if (seriousCount > 0) {
         doc.setFontSize(6.5);
         doc.setFont("helvetica", "normal");
-        textC(ORANGE);
-        doc.text(`${d.major_count} major`, scx, cy);
-        scx += doc.getTextWidth(`${d.major_count} major`) + 5;
+        textC([255, 100, 0]);
+        doc.text(`${seriousCount} serious`, scx, cy);
+        scx += doc.getTextWidth(`${seriousCount} serious`) + 5;
+      }
+      if (d.moderate_count && (d.moderate_count as number) > 0) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        textC(AMBER);
+        doc.text(`${d.moderate_count} moderate`, scx, cy);
+        scx += doc.getTextWidth(`${d.moderate_count} moderate`) + 5;
       }
       if (d.minor_count && (d.minor_count as number) > 0) {
         doc.setFontSize(6.5);
         doc.setFont("helvetica", "normal");
-        textC(AMBER);
+        textC([150, 150, 150]);
         doc.text(`${d.minor_count} minor`, scx, cy);
       }
       cy += 6;

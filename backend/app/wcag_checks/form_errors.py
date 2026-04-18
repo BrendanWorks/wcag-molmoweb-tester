@@ -33,7 +33,7 @@ class FormErrorTest(BaseWCAGTest):
     TEST_ID = "form_errors"
     TEST_NAME = "Form Navigation & Error Handling"
     WCAG_CRITERIA = ["3.3.1", "3.3.2", "3.3.3", "3.3.4"]
-    DEFAULT_SEVERITY = "major"
+    DEFAULT_SEVERITY = "serious"
     MOLMO_QUESTION = (
         "Describe any error messages, validation warnings, or inline field feedback visible "
         "on this page after form submission. Name which fields have error indicators and "

@@ -90,7 +90,7 @@ class ColorBlindnessTest(BaseWCAGTest):
     TEST_ID = "color_blindness"
     TEST_NAME = "Color-Blindness & Contrast Check"
     WCAG_CRITERIA = ["1.4.1", "1.4.3"]
-    DEFAULT_SEVERITY = "major"
+    DEFAULT_SEVERITY = "serious"
     MOLMO_QUESTION = "What elements on this page use color alone to convey meaning, without any text labels or icons?"
 
     async def run(self, page, task: str) -> AsyncGenerator[dict, None]:
@@ -146,7 +146,7 @@ class ColorBlindnessTest(BaseWCAGTest):
             ]
             result = TestResult(
                 test_id=self.TEST_ID, test_name=self.TEST_NAME,
-                result="fail", wcag_criteria=["1.4.3"], severity="major",
+                result="fail", wcag_criteria=["1.4.3"], severity="serious",
                 failure_reason=f"Insufficient contrast: {'; '.join(parts)}",
                 recommendation=(
                     "Ensure text meets WCAG AA: 4.5:1 for normal text, 3:1 for large text. "

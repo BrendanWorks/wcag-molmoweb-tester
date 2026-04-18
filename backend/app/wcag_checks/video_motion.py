@@ -46,7 +46,7 @@ MOTION_JS = """
 
     if (autoplayVideos.length > 0) {
         issues.push({
-            criterion: '2.2.2', severity: 'major',
+            criterion: '2.2.2', severity: 'serious',
             description: `${autoplayVideos.length} video(s) set to autoplay. Users must be able to pause/stop auto-playing content.`,
             examples: autoplayVideos.slice(0,3).map(v => v.getAttribute('src')||v.currentSrc||'<video>').map(s=>s.split('/').pop().slice(0,40)),
             fix: 'Remove autoplay, or add visible pause/stop controls. If video has audio, also add muted or controls attribute.',
@@ -54,7 +54,7 @@ MOTION_JS = """
     }
     if (videosWithoutCaptions.length > 0) {
         issues.push({
-            criterion: '1.2.2', severity: 'major',
+            criterion: '1.2.2', severity: 'serious',
             description: `${videosWithoutCaptions.length} video(s) lack caption tracks (<track kind="captions">).`,
             fix: 'Add a <track kind="captions" src="captions.vtt"> inside each <video>.',
         });
@@ -93,7 +93,7 @@ MOTION_JS = """
         const captionNote = 'Ensure embedded videos have closed captions enabled (YouTube: ?cc_load_policy=1).';
         if (autoplayEmbeds.length > 0) {
             issues.push({
-                criterion: '2.2.2', severity: 'major',
+                criterion: '2.2.2', severity: 'serious',
                 description: `${autoplayEmbeds.length} embedded video(s) use autoplay parameter.`,
                 examples: autoplayEmbeds.slice(0,3).map(f => (f.getAttribute('src')||'').slice(0,60)),
                 fix: 'Remove autoplay=1 from embedded video URLs. ' + captionNote,
@@ -175,7 +175,7 @@ class VideoMotionTest(BaseWCAGTest):
     TEST_ID = "video_motion"
     TEST_NAME = "Video, Audio & Motion"
     WCAG_CRITERIA = ["1.2.1", "1.2.2", "2.2.2", "2.3.1"]
-    DEFAULT_SEVERITY = "major"
+    DEFAULT_SEVERITY = "serious"
     MOLMO_QUESTION = (
         "Describe any videos, animations, carousels, or auto-playing content visible on this "
         "page. For each one, describe whether pause, stop, or mute controls are visible and "
@@ -230,14 +230,14 @@ class VideoMotionTest(BaseWCAGTest):
             ))
             return
 
-        severity_order = {"critical": 0, "major": 1, "minor": 2}
-        issues.sort(key=lambda i: severity_order.get(i.get("severity", "minor"), 2))
+        severity_order = {"critical": 0, "serious": 1, "moderate": 2, "minor": 3}
+        issues.sort(key=lambda i: severity_order.get(i.get("severity", "minor"), 3))
 
         criticals = [i for i in issues if i.get("severity") == "critical"]
-        majors    = [i for i in issues if i.get("severity") == "major"]
+        seriouses = [i for i in issues if i.get("severity") == "serious"]
 
-        overall_severity = "critical" if criticals else ("major" if majors else "minor")
-        overall_result   = "fail" if (criticals or majors) else "warning"
+        overall_severity = "critical" if criticals else ("serious" if seriouses else "minor")
+        overall_result   = "fail" if (criticals or seriouses) else "warning"
 
         top = issues[:3]
         parts = []

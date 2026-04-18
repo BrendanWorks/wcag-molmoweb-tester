@@ -17,7 +17,7 @@ class ZoomTest(BaseWCAGTest):
     TEST_ID = "zoom"
     TEST_NAME = "Resize Text & Reflow"
     WCAG_CRITERIA = ["1.4.4", "1.4.10"]
-    DEFAULT_SEVERITY = "major"
+    DEFAULT_SEVERITY = "serious"
     MOLMO_QUESTION = (
         "Describe any content that extends past the right edge of the viewport or requires "
         "horizontal scrolling at this zoom level. Name the specific elements that appear cut off, "
@@ -117,7 +117,7 @@ class ZoomTest(BaseWCAGTest):
                           ("Reflow (1.4.10)" if has_scroll else "Resize Text (1.4.4)"),
                 result="fail",
                 wcag_criteria=["1.4.10"] if has_scroll else ["1.4.4"],
-                severity="major",
+                severity="serious",
                 failure_reason=" | ".join(failures),
                 recommendation=(
                     "Use responsive CSS (flexbox/grid, max-width, relative units). "

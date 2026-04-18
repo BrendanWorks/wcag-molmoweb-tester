@@ -68,7 +68,7 @@ class FocusIndicatorTest(BaseWCAGTest):
     TEST_ID = "focus_indicator"
     TEST_NAME = "Focus Visibility Check"
     WCAG_CRITERIA = ["2.4.7"]
-    DEFAULT_SEVERITY = "major"
+    DEFAULT_SEVERITY = "serious"
     # Per-element question — formatted inline in the run() loop
     MOLMO_QUESTION = None  # overridden per-call
 

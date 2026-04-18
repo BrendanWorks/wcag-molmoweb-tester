@@ -44,6 +44,11 @@ class BaseWCAGTest:
     TEST_ID: str = ""
     TEST_NAME: str = ""
     WCAG_CRITERIA: list[str] = []
+    # IMPORTANT: Every result path in subclasses MUST assign an explicit severity value
+    # before yielding or returning. DEFAULT_SEVERITY exists only as a last-resort fallback
+    # and should never fire in practice. If you add a new check and forget to assign
+    # severity, everything will silently emit "serious" — no error, no warning.
+    # Treat severity as a required field, not an optional one.
     DEFAULT_SEVERITY: str = "serious"
 
     # Visual WCAG question sent to MolmoWeb-8B after programmatic checks.

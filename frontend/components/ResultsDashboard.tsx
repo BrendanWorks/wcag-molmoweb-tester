@@ -95,12 +95,12 @@ interface Report {
 
 // ── Severity styling (Axe/WCAG impact scale) ──────────────────────────────────
 const SEVERITY_STYLE: Record<string, { bg: string; color: string; border: string }> = {
-  critical: { bg: "rgba(255,51,102,0.12)",  color: "var(--crimson)", border: "rgba(255,51,102,0.35)" },
-  serious:  { bg: "rgba(255,100,0,0.12)",   color: "#FF6400",        border: "rgba(255,100,0,0.35)" },
-  moderate: { bg: "rgba(255,184,0,0.12)",   color: "var(--amber)",   border: "rgba(255,184,0,0.35)" },
-  minor:    { bg: "rgba(160,160,160,0.1)",  color: "#9CA3AF",        border: "rgba(160,160,160,0.3)" },
-  // keep legacy alias so old persisted jobs still render
-  major:    { bg: "rgba(255,100,0,0.12)",   color: "#FF6400",        border: "rgba(255,100,0,0.35)" },
+  critical: { bg: "rgba(255,40,90,0.18)",   color: "#FF2255",  border: "rgba(255,40,90,0.45)" },
+  serious:  { bg: "rgba(255,100,0,0.18)",   color: "#FF6600",  border: "rgba(255,100,0,0.45)" },
+  moderate: { bg: "rgba(255,184,0,0.18)",   color: "#FFB800",  border: "rgba(255,184,0,0.45)" },
+  minor:    { bg: "rgba(160,160,160,0.14)", color: "#C0C0C0",  border: "rgba(160,160,160,0.4)" },
+  // legacy alias — old persisted jobs with severity="major" still render
+  major:    { bg: "rgba(255,100,0,0.18)",   color: "#FF6600",  border: "rgba(255,100,0,0.45)" },
 };
 
 const RESULT_STYLE: Record<string, { bg: string; color: string; border: string }> = {
@@ -130,11 +130,12 @@ const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }>
 //
 type ConfidenceTier = "high" | "medium" | "low";
 
-// Confidence uses outlined style (no fill) so it reads as metadata, not severity.
-const CONFIDENCE_STYLE: Record<ConfidenceTier, { label: string; color: string; dot: string; border: string }> = {
-  high:   { label: "high",   color: "#6EE7B7",              dot: "#6EE7B7",              border: "rgba(110,231,183,0.35)" },
-  medium: { label: "med",    color: "var(--muted)",         dot: "var(--muted)",         border: "var(--border)" },
-  low:    { label: "low",    color: "rgba(255,184,0,0.8)",  dot: "rgba(255,184,0,0.8)",  border: "rgba(255,184,0,0.35)" },
+// Confidence: uniform neutral style — no color variation so it cannot be
+// misread as a second severity scale.
+const CONFIDENCE_STYLE: Record<ConfidenceTier, { label: string }> = {
+  high:   { label: "High" },
+  medium: { label: "Medium" },
+  low:    { label: "Low" },
 };
 
 const CONFIDENCE_TOOLTIP: Record<ConfidenceTier, string> = {
@@ -430,23 +431,28 @@ export default function ResultsDashboard({
 
       {/* ── Per-test results ── */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1 flex-wrap gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--muted)" }}>
-            Test Results
-          </h3>
-          {/* Legend */}
-          <div className="flex items-center gap-3 text-xs" style={{ color: "var(--muted)" }}>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(255,51,102,0.12)", color: "var(--crimson)", border: "1px solid rgba(255,51,102,0.35)" }}>Critical</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(255,100,0,0.12)", color: "#FF6400", border: "1px solid rgba(255,100,0,0.35)" }}>Serious</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(255,184,0,0.12)", color: "var(--amber)", border: "1px solid rgba(255,184,0,0.35)" }}>Moderate</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium" style={{ background: "rgba(160,160,160,0.1)", color: "#9CA3AF", border: "1px solid rgba(160,160,160,0.3)" }}>Minor</span>
-              <span style={{ color: "var(--border)" }}>= impact</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-mono" style={{ background: "transparent", color: "#6EE7B7", border: "1px solid rgba(110,231,183,0.35)" }}><span style={{ fontSize: "7px" }}>●</span>high</span>
-              <span style={{ color: "var(--border)" }}>= confidence</span>
-            </span>
+        <h3 className="text-xs font-semibold uppercase tracking-widest px-1" style={{ color: "var(--muted)" }}>
+          Test Results
+        </h3>
+        {/* Legend row — User Impact (left, colored) | Test Confidence (right, neutral) */}
+        <div className="flex items-center justify-between px-1 flex-wrap gap-y-1.5 pb-1" style={{ borderBottom: "1px solid var(--border)" }}>
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <span className="font-semibold uppercase tracking-wide text-xs" style={{ color: "var(--muted)" }}>User Impact</span>
+            {(["critical","serious","moderate","minor"] as const).map((sev) => (
+              <span key={sev} className="px-1.5 py-0.5 rounded font-semibold text-xs capitalize"
+                style={{ background: SEVERITY_STYLE[sev].bg, color: SEVERITY_STYLE[sev].color, border: `1px solid ${SEVERITY_STYLE[sev].border}` }}>
+                {sev}
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="font-semibold uppercase tracking-wide text-xs" style={{ color: "var(--muted)" }}>Test Confidence</span>
+            {(["High","Medium","Low"] as const).map((label) => (
+              <span key={label} className="px-1.5 py-0.5 rounded-full font-mono text-xs"
+                style={{ background: "transparent", color: "var(--muted)", border: "1px solid var(--border)" }}>
+                {label}
+              </span>
+            ))}
           </div>
         </div>
         {r.test_summaries?.map((ts) => {
@@ -486,13 +492,12 @@ export default function ResultsDashboard({
                     {ts.severity}
                   </span>
                 )}
-                {/* Confidence tier badge — outlined only (no fill) so it reads as metadata */}
+                {/* Confidence badge — neutral outlined pill, no color coding */}
                 <span
-                  className="hidden sm:inline flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-mono"
-                  style={{ background: "transparent", color: cs.color, border: `1px solid ${cs.border}` }}
+                  className="hidden sm:inline text-xs px-2 py-0.5 rounded-full font-mono"
+                  style={{ background: "transparent", color: "var(--muted)", border: "1px solid var(--border)" }}
                   title={CONFIDENCE_TOOLTIP[tier]}
                 >
-                  <span style={{ fontSize: "8px", color: cs.dot }}>●</span>
                   {cs.label}
                 </span>
                 {ts.wcag_criteria?.map((c) => (

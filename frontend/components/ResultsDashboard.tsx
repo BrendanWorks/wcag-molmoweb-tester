@@ -208,6 +208,45 @@ const card = {
   borderRadius: "12px",
 };
 
+function InferenceInfoTooltip() {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex items-center">
+      <button
+        type="button"
+        aria-label="About these models"
+        aria-expanded={open}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[10px] font-bold cursor-default select-none flex-shrink-0"
+        style={{ color: "var(--muted)", border: "1px solid var(--border)", lineHeight: 1, background: "transparent" }}
+      >
+        i
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute bottom-full left-1/2 z-[9999] mb-2 w-72 -translate-x-1/2 rounded-lg px-3 py-2.5 text-xs leading-relaxed shadow-xl"
+          style={{
+            background: "var(--surface2)",
+            border: "1px solid var(--border)",
+            color: "var(--text)",
+            pointerEvents: "none",
+          }}
+        >
+          <p className="mb-1.5" style={{ color: "var(--muted)" }}>This tool uses AI models to analyze your website. Here&rsquo;s what&rsquo;s happening behind the scenes:</p>
+          <p className="mb-1"><span className="font-semibold" style={{ color: "var(--text)" }}>molmo-web-8b</span> looks at screenshots of your site to spot visual accessibility problems a code scan might miss.</p>
+          <p className="mb-1"><span className="font-semibold" style={{ color: "var(--text)" }}>molmo-7b-d</span> answers specific visual questions about what it sees on your page.</p>
+          <p className="mb-1.5"><span className="font-semibold" style={{ color: "var(--text)" }}>olmo-3-7b</span> writes the plain-English summary you read above.</p>
+          <p style={{ color: "var(--muted)" }}><span className="font-semibold">Latency</span> is how long the AI took to analyze your site. <span className="font-semibold">Tokens</span> are the unit of text the models process — think of them roughly like words.</p>
+        </span>
+      )}
+    </span>
+  );
+}
+
 export default function ResultsDashboard({
   report,
   url,
@@ -797,32 +836,8 @@ export default function ResultsDashboard({
             <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--muted)" }}>
               Model Inference
             </span>
-            {/* Info tooltip */}
-            <span className="relative group">
-              <span
-                className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[10px] font-bold cursor-default select-none"
-                style={{ color: "var(--muted)", border: "1px solid var(--border)", lineHeight: 1 }}
-                aria-label="About these models"
-                tabIndex={0}
-              >
-                i
-              </span>
-              <span
-                className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-72 -translate-x-1/2 rounded-lg px-3 py-2.5 text-xs leading-relaxed opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-                style={{
-                  background: "var(--surface2)",
-                  border: "1px solid var(--border)",
-                  color: "var(--text)",
-                }}
-                role="tooltip"
-              >
-                <p className="mb-1.5" style={{ color: "var(--muted)" }}>This tool uses AI models to analyze your website. Here&rsquo;s what&rsquo;s happening behind the scenes:</p>
-                <p className="mb-1"><span className="font-semibold" style={{ color: "var(--text)" }}>molmo-web-8b</span> looks at screenshots of your site to spot visual accessibility problems a code scan might miss.</p>
-                <p className="mb-1"><span className="font-semibold" style={{ color: "var(--text)" }}>molmo-7b-d</span> answers specific visual questions about what it sees on your page.</p>
-                <p className="mb-1.5"><span className="font-semibold" style={{ color: "var(--text)" }}>olmo-3-7b</span> writes the plain-English summary you read above.</p>
-                <p style={{ color: "var(--muted)" }}><span className="font-semibold">Latency</span> is how long the AI took to analyze your site. <span className="font-semibold">Tokens</span> are the unit of text the models process — think of them roughly like words.</p>
-              </span>
-            </span>
+            {/* Info tooltip — state-driven to avoid overflow-clip from parent cards */}
+            <InferenceInfoTooltip />
           </div>
           <div className="flex flex-wrap gap-4 text-xs mb-3">
             <div>

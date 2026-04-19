@@ -261,6 +261,12 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - WCAG criterion numbers in results dashboard link to W3C Understanding docs; version selector (2.1/2.2) routes to correct spec; 2.2-only criteria always use WCAG22 path
 - Two-phase progress bar: indeterminate lime shimmer during cold start → determinate fill driven by `test_start` events (16.7% per test); current test name shown below bar; `done` snaps to 100%
 - `robots.txt` false-positive fix: `_build_robots_parser` now manually fetches with `urllib`, only parses on HTTP 200; non-200 and network errors log internally and proceed — only an explicit `Disallow` blocks the scan; regression suite updated (discord.com was a false positive, now verified accessible)
+- Inference timing + token tracking: every `generate()` call on all three models records wall-clock latency, input tokens, and output tokens; aggregated by model into `inference_metadata.by_model` in the final report; "Model Inference" panel in results dashboard shows per-model breakdown
+- DynamicCache silent-failure fix (Transformers 5.5.3): `MolmoQAAnalyzer._generate()` was silently returning `""` on every call (`AttributeError: 'DynamicCache' object has no attribute 'key_cache'`); the old `"__getitem__" not in vars(_DC)` guard used `vars()` which misses inherited attrs, causing the patch to fire inconsistently; fixed by patching unconditionally with `getattr`-safe lambdas; all visual QA analysis now works end-to-end
+- Severity badge contrast fix: Critical (`#FF2255` → `#FF6680`, 3.81:1 → 4.88:1) and Serious (`#FF6600` → `#FF8040`, 4.33:1 → 5.09:1) badges now pass WCAG 1.4.3 against their alpha-composited backgrounds
+- PDF confidence badge fix: `low` badge background raised from `[25,18,0]` to `[40,28,0]` (was invisible against PDF bg `[26,26,27]`); labels changed from ASCII-art `"* high"` / `"~ med"` / `"o low"` to plain `"High"` / `"Med"` / `"Low"`
+- Severity audit + `DEFAULT_SEVERITY` guard comment: confirmed all 7 checks assign explicit severity on every result path; added warning comment to `BaseWCAGTest` explaining `DEFAULT_SEVERITY = "serious"` is a fallback that should never fire
+- Model info tooltip: `ⓘ` icon next to "MODEL INFERENCE" heading opens a right-side tooltip explaining each model's role and defining latency/tokens in plain English
 
 ### Backlog
 - **Supabase migration** — move job store from Modal Dict to Supabase for proper relational history, user accounts, and analytics

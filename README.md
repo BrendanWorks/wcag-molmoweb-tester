@@ -267,8 +267,10 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - PDF confidence badge fix: `low` badge background raised from `[25,18,0]` to `[40,28,0]` (was invisible against PDF bg `[26,26,27]`); labels changed from ASCII-art `"* high"` / `"~ med"` / `"o low"` to plain `"High"` / `"Med"` / `"Low"`
 - Severity audit + `DEFAULT_SEVERITY` guard comment: confirmed all 7 checks assign explicit severity on every result path; added warning comment to `BaseWCAGTest` explaining `DEFAULT_SEVERITY = "serious"` is a fallback that should never fire
 - Model info tooltip: `ⓘ` icon next to "MODEL INFERENCE" heading opens a right-side tooltip explaining each model's role and defining latency/tokens in plain English
+- **Regression suite benchmark invalidated:** discovered that the GDS Accessibility Audit page (`alphagov.github.io/…`), used as the "ground-truth broken page" in the regression suite, loads correctly from local IPs but GitHub Pages serves a fallback/status page to Modal's datacenter IPs — the `has_failures` assertion was passing against GitHub's own status page (which has a linked image with empty alt text), not the deliberately broken GDS test cases; W3C WAI BAD is also blocked at the network level from Modal IPs; a replacement benchmark that is genuinely reachable from datacenter IPs is needed
 
 ### Backlog
+- **Regression suite benchmark replacement** — find a publicly accessible, deliberately broken accessibility page that loads correctly from Modal datacenter IPs (W3C WAI BAD and GDS alphagov both fail from datacenter); candidates: Deque University demo, axe-core's own test fixtures, or a self-hosted broken page
 - **Supabase migration** — move job store from Modal Dict to Supabase for proper relational history, user accounts, and analytics
 - **Scan history** — localStorage-backed list of recent scans with permalinks
 - **Re-run button** — "Scan again" resets form state without navigating away

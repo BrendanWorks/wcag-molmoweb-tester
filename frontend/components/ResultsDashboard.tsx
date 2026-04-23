@@ -134,6 +134,7 @@ const RESULT_STYLE: Record<string, { bg: string; color: string; border: string }
 const RESULT_ICON: Record<string, string> = {
   pass: "✓", fail: "✗", warning: "⚠", error: "!",
 };
+const knownResults = new Set(["pass", "fail", "warning", "error"]);
 
 const STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   compliant:       { label: "Compliant",      color: "var(--lime)",    bg: "rgba(204,255,0,0.1)" },
@@ -541,7 +542,7 @@ export default function ResultsDashboard({
                   className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
                   style={{ background: rs.bg, border: `1px solid ${rs.border}`, color: rs.color }}
                 >
-                  {RESULT_ICON[ts.result] ?? "?"}
+                  {knownResults.has(ts.result) ? RESULT_ICON[ts.result] : "−"}
                 </span>
                 <span className="flex-1 font-medium text-sm" style={{ color: "var(--text)" }}>
                   {ts.test_name}
@@ -588,15 +589,18 @@ export default function ResultsDashboard({
                   {ts.failure_reason && (
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--muted)" }}>
-                        {ts.result === "warning" ? "Notice" : "Failure"}
+                        {ts.result === "fail" ? "Failure" : "Notice"}
                       </p>
                       <p style={{ color: "var(--text)" }}>{ts.failure_reason}</p>
                     </div>
                   )}
-                  {ts.result === "warning" && (() => {
+                  {ts.result !== "pass" && ts.result !== "fail" && (() => {
                     const d = ts.details ?? {};
+                    const isUnknown = !knownResults.has(ts.result);
                     let method: string | null = null;
-                    if (ts.test_id === "focus_indicator") {
+                    if (isUnknown) {
+                      method = "This check could not complete on this page — result is inconclusive. Try scanning again or test this criterion manually";
+                    } else if (ts.test_id === "focus_indicator") {
                       const tabs = d.tabs_tested ?? (d.steps as unknown[])?.length ?? 0;
                       method = d.molmo2_used
                         ? `AI visual inspection of ${tabs} element${tabs !== 1 ? "s" : ""}`
@@ -618,7 +622,7 @@ export default function ResultsDashboard({
                         style={{ background: "rgba(255,184,0,0.06)", border: "1px solid rgba(255,184,0,0.18)" }}>
                         <span style={{ color: "var(--amber)", flexShrink: 0 }}>⚠</span>
                         <span style={{ color: "var(--muted)" }}>
-                          <span className="font-semibold" style={{ color: "var(--text)" }}>Needs manual review. </span>
+                          <span className="font-semibold" style={{ color: "var(--text)" }}>{isUnknown ? "Inconclusive. " : "Needs manual review. "}</span>
                           {method}.
                         </span>
                       </div>
@@ -858,6 +862,12 @@ export default function ResultsDashboard({
                         style={{ border: "1px solid var(--border)" }}
                       />
                     </div>
+                  )}
+                  {/* Fallback when nothing else rendered */}
+                  {!ts.failure_reason && !ts.recommendation && !(ts.wcag_criteria?.length > 0) &&
+                   !(ts.screenshot_b64 || ts.screenshot_path) &&
+                   ts.result === "pass" && (
+                    <p className="text-sm" style={{ color: "var(--muted)" }}>No issues found.</p>
                   )}
                 </div>
               )}

@@ -283,7 +283,7 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - Eval logger (JSONL dataset per run)
 - Initial regression suite (`regression_suite.py`) with known-outcome assertions
 
-### Sprint 3 — Reliability & Sharing (Apr 14–21, current)
+### Sprint 3 — Reliability & Sharing (Apr 14–21)
 - Bot/CAPTCHA detection: real Chrome user-agent, 6-heuristic detector (HTTP status, URL redirect, title keywords, 18 DOM selectors, body text, empty-page)
 - `robots.txt` blocks emit `page_error` events with descriptive messages; frontend shows block warning banner
 - OLMo guard: skips 14 GB model load when `pages_scanned == 0`
@@ -306,7 +306,7 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - Model info tooltip: `ⓘ` icon next to "MODEL INFERENCE" heading opens a right-side tooltip explaining each model's role and defining latency/tokens in plain English
 - **Regression suite benchmark invalidated:** discovered that the GDS Accessibility Audit page (`alphagov.github.io/…`), used as the "ground-truth broken page" in the regression suite, loads correctly from local IPs but GitHub Pages serves a fallback/status page to Modal's datacenter IPs — the `has_failures` assertion was passing against GitHub's own status page (which has a linked image with empty alt text), not the deliberately broken GDS test cases; W3C WAI BAD is also blocked at the network level from Modal IPs; a replacement benchmark that is genuinely reachable from datacenter IPs is needed
 
-### Sprint 4 — Eval Pipeline (Apr 21–25)
+### Sprint 4 — Eval Pipeline (Apr 21–25, current)
 - **Per-check recall assertions** — regression suite now asserts that specific known checks fire on the GDS ground-truth page: `page_structure` must be a hard FAIL, `form_errors` must be FAIL or WARN
 - **Recall floor** — at least 2/5 checks must produce a hard failure on any known-broken page; catches model drift that silently reduces detection rate
 - **Severity calibration** — asserts at least one failure reaches `serious` or `critical` severity on the GDS page; catches severity scale drift toward under-reporting

@@ -239,14 +239,29 @@ After each GDS run, Claude (claude-haiku-4-5) grades the OLMo-3 executive summar
 
 Scores are 1–5 per dimension. Average below 2.0 is a blocking failure. Current score: **2.3/5** (advisory warning — OLMo-3 produces a broken contrast ratio string and vague remediation copy; tracked for future prompt improvement).
 
+### Axe cross-tool recall check
+
+Before the GPU cases run, [`axe_runner.py`](axe_runner.py) injects axe-core 4.9.1 into a local Playwright browser and runs `axe.run()` against the GDS page. Violations are mapped to PointCheck check categories:
+
+| PointCheck check | Axe rules mapped |
+|---|---|
+| `page_structure` | image-alt, button-name, link-name, aria-roles, frame-title, list, listitem, heading-order, and others |
+| `form_errors` | label, select-name, form-field-multiple-labels |
+| `keyboard_nav` | scrollable-region-focusable, tabindex, skip-link |
+
+The assertion: if Axe found violations in a check category and PointCheck returned `pass`, that is a flagged false negative and the suite fails. This catches DOM-layer regressions that the visual eval layer cannot see. Current result: all three mapped categories confirm no false negatives.
+
+This is intentionally limited to the DOM-detectable overlap. For checks where Axe is blind by design (focus ring pixel presence, contrast under a color vision filter, keyboard traps that only appear at runtime), Axe cannot serve as ground truth and is not used.
+
 ### Consistency eval
 
 `python3 regression_suite.py --consistency` runs `page_structure` twice on the GDS page and asserts the result is stable across independent model runs. Opt-in to keep the default suite within ~12 minutes (GPU constraint: cases run sequentially, each loading MolmoWeb-8B into the A100).
 
 ```bash
-python3 regression_suite.py              # default: 4 cases, ~10 min
-python3 regression_suite.py --consistency   # +1 case, ~+150s
-python3 regression_suite.py --skip-judge    # skip LLM-as-judge if no API key
+python3 regression_suite.py                  # default: 4 cases + axe baseline, ~10 min
+python3 regression_suite.py --consistency    # +1 case, ~+150s
+python3 regression_suite.py --skip-judge     # skip LLM-as-judge if no API key
+python3 regression_suite.py --skip-axe       # skip Axe cross-tool check
 ```
 
 ---
@@ -313,7 +328,8 @@ Approximately **85–90% of WCAG 2.1 Level AA** success criteria are covered pro
 - **False-positive rate case** — added GOV.UK Design System (one of the most rigorously accessibility-tested sites on the web) as a fourth regression case; asserts no critical-severity failures on a known-good page
 - **LLM-as-judge** — after each GDS run, Claude (claude-haiku-4-5) grades the OLMo-3 narrative on accuracy (3/5), completeness (2/5), and actionability (2/5); avg < 2.0 is a blocking failure; current score 2.3/5 (advisory warning — narrative produces a broken contrast ratio string and vague remediation copy)
 - **Consistency eval** — `--consistency` flag runs `page_structure` twice on the GDS page and asserts stable results across independent runs; opt-in to keep default suite within ~12 min
-- **`eval_results.md`** — latest passing run logged to repo with judge scores; 12/12 assertions pass
+- **Axe cross-tool recall check** — `axe_runner.py` injects axe-core 4.9.1 via Playwright, maps violations to PointCheck check categories (`page_structure`, `form_errors`, `keyboard_nav`), asserts PointCheck does not pass any check where Axe found violations; catches DOM-layer false negatives the visual eval layer cannot see
+- **`eval_results.md`** — latest passing run logged to repo with judge scores; all assertions pass
 - Resolved regression suite benchmark issue: GDS alphagov page (GitHub Pages) is reachable from Modal datacenter IPs; W3C WAI BAD was the only blocked site
 
 ### Backlog
